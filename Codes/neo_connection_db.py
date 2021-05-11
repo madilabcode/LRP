@@ -56,10 +56,7 @@ def ceack_if_node_in_graph(graph, node):
 
 
 def add_node_to_neo(graph, ClusterName, treatment, proj="Michael_proj"):
-    try:
-        type_of_cell, subTypeCell = return_type_and_subtype(ClusterName)
-    except:
-        return Exception("no data found")
+    type_of_cell, subTypeCell = return_type_and_subtype(ClusterName)
     node = Node("Cell", Type=type_of_cell, SubType=subTypeCell, Cluster=ClusterName,
                 treatment=treatment, project=proj)
 
@@ -199,8 +196,8 @@ def return_type_and_subtype(cluster):
     except:
         raise Exception("No anontaion for type and sub type found")
 
-    typeCell = list(annot.loc[annot["Cluster"].astype(str) == str(cluster), "Type"])[0]
-    subTypeCell = list(annot.loc[annot["Cluster"].astype(str) == str(cluster), "subType"])[0]
+    typeCell = list(annot.loc[annot["Cluster"] == int(cluster), "Type"])[0]
+    subTypeCell = list(annot.loc[annot["Cluster"] == int(cluster), "subType"])[0]
 
     return typeCell, subTypeCell
 

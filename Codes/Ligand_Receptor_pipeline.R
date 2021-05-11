@@ -62,7 +62,7 @@ python_phyper = function(q,m,n,k){
 
 #source_python("Tf_Graph.py") 
 createLRtable = function(seuratObj,toExpression,fromExpression,fromName = fromName,toName=toName,assyaName,thrshold = 0.1,num2compare = "de"){
-  
+  print(toExpression)
   LigandReceptorTable = read.delim("files/LigandReceptorTableMouse.tsv",sep = "\t", header = T, quote = "" )  
   #remove overlaps between ligand and receptor
   LigandReceptorTable = LigandReceptorTable[!LigandReceptorTable$from %in% LigandReceptorTable$to,]
@@ -228,7 +228,7 @@ DSAlegenedNcolor = function(allReceptorDSA){
   #allReceptorDSASacle = allReceptorDSA
   allReceptorDSA$DSA = allReceptorDSA$DSA
   allReceptorDSA = allReceptorDSA[allReceptorDSA$DSA != Inf &  allReceptorDSA$DSA > 0,]
-  
+
   abs_maxmean_weight = quantile(abs(c(allReceptorDSA$DSA) - 0.5),0.85, na.rm = TRUE)
   DSAcol_fun = colorRamp2(c(0, (0.5 + abs_maxmean_weight)), c("white", "#28a10a"))
   lgd_DSA = Legend(at = c(0, (allReceptorDSA$DSA %>% max()/2) %>% round(digits = 2),
@@ -237,7 +237,7 @@ DSAlegenedNcolor = function(allReceptorDSA){
   return(list(DSAcol_fun,lgd_DSA,allReceptorDSA))
 }
 
-createCircosPlots = function(toExpression,LR,DE, TFR,DSA,fromName  ,toName , num2compare, seuratObj,de_recptors = NULL,p_val_recp = NULL,path = "/plotOut"){
+createCircosPlots = function(toExpression,LR,DE, TFR,DSA,fromName  ,toName , num2compare, seuratObj,de_recptors = NULL,path = "/plotOut"){
   #***integrate everything and create the circos plot***#
   maxTf = 0
   for (key in names(TFR)){
@@ -297,7 +297,7 @@ createCircosPlots = function(toExpression,LR,DE, TFR,DSA,fromName  ,toName , num
   factors =  unique(c(as.character(LR$Ligand),as.character(LR$Receptor)))
   #subset LR to just names, otherwize it affect the width of the arrows
   LR = LR[,c("Ligand","Receptor")]
-  
+
   #the plot itself
   pdf(paste0(paste(sep = "" ,getwd(),path),"/",fromName,"_",toName,"Circos.pdf"),width=10,height=7)
   circos.clear()
@@ -318,32 +318,32 @@ createCircosPlots = function(toExpression,LR,DE, TFR,DSA,fromName  ,toName , num
   
   #Expression loop  
   for(i in intersect(GeneExpression$gene, factors)) {
-    circos.rect(xleft = 0,
-                xright = c(grep(paste0("^",i,"$"),LR$Ligand),
-                           grep(paste0("^",i,"$"),LR$Receptor)) %>% length(),
-                ybottom = 0.7, ytop = 0.9, 
-                col = ifelse(i %in% LR$Ligand |is.null(de_recptors) | i %in% de_recptors ,EXPRcol_fun(GeneExpression[i,"mean"]),"gray"), 
-                border = ifelse(i %in% LR$Ligand |is.null(de_recptors) | i %in% de_recptors ,EXPRcol_fun(GeneExpression[i,"mean"]),"gray"),
-                sector.index = i, track.index = 1)
+      circos.rect(xleft = 0,
+       xright = c(grep(paste0("^",i,"$"),LR$Ligand),
+                  grep(paste0("^",i,"$"),LR$Receptor)) %>% length(),
+       ybottom = 0.7, ytop = 0.9, 
+       col = ifelse(i %in% LR$Ligand |is.null(de_recptors) | i %in% de_recptors ,EXPRcol_fun(GeneExpression[i,"mean"]),"gray"), 
+       border = ifelse(i %in% LR$Ligand |is.null(de_recptors) | i %in% de_recptors ,EXPRcol_fun(GeneExpression[i,"mean"]),"gray"),
+       sector.index = i, track.index = 1)
   }
   #DE loop  
   for(a in intersect(DE_Data_Sub$gene, factors)) {
-    circos.rect(xleft = 0,
-                xright = c(grep(paste0("^",a,"$"),LR$Ligand),
-                           grep(paste0("^",a,"$"),LR$Receptor)) %>% length(),
-                ybottom = 0.95, ytop = 1.15, 
-                col = ifelse(a %in% LR$Ligand | is.null(de_recptors) | a %in% de_recptors , DEcol_fun(DE_Data_Sub[a,"p_val_adj"]),"gray"), 
-                border = ifelse(a %in% LR$Ligand |is.null(de_recptors) | a %in% de_recptors , DEcol_fun(DE_Data_Sub[a,"p_val_adj"]),"gray"),
-                sector.index = a, track.index = 1)
+      circos.rect(xleft = 0,
+      xright = c(grep(paste0("^",a,"$"),LR$Ligand),
+                 grep(paste0("^",a,"$"),LR$Receptor)) %>% length(),
+      ybottom = 0.95, ytop = 1.15, 
+      col = ifelse(a %in% LR$Ligand | is.null(de_recptors) | a %in% de_recptors , DEcol_fun(DE_Data_Sub[a,"p_val_adj"]),"gray"), 
+      border = ifelse(a %in% LR$Ligand |is.null(de_recptors) | a %in% de_recptors , DEcol_fun(DE_Data_Sub[a,"p_val_adj"]),"gray"),
+      sector.index = a, track.index = 1)
   }
   #DSA loop
   for(receptor in intersect (DSA_Table$Recp, factors)){
-    circos.rect(xleft = 0,
-                xright = grep(paste0("^",receptor,"$"),LR$Receptor) %>% length,
-                ybottom = 1.2, ytop = 1.2 + 2*max(0.25, (as.numeric(TFR[[receptor]])/maxTf)), 
-                col = ifelse((is.null(de_recptors) | receptor %in% de_recptors) & (is.null(p_val_recp) | !receptor %in% p_val_recp),DSAcol_fun(DSA_Table[receptor,"DSA"]),"gray"), 
-                border = ifelse((is.null(de_recptors) | receptor %in% de_recptors) & (is.null(p_val_recp) | !receptor %in% p_val_recp),DSAcol_fun(DSA_Table[receptor,"DSA"]),"gray"),
-                sector.index = receptor, track.index = 1)
+      circos.rect(xleft = 0,
+      xright = grep(paste0("^",receptor,"$"),LR$Receptor) %>% length,
+      ybottom = 1.2, ytop = 1.2 + 2*max(0.25, (as.numeric(TFR[[receptor]])/maxTf)), 
+      col = ifelse(is.null(de_recptors) | receptor %in% de_recptors,DSAcol_fun(DSA_Table[receptor,"DSA"]),"gray"), 
+      border = ifelse(is.null(de_recptors) | receptor %in% de_recptors,DSAcol_fun(DSA_Table[receptor,"DSA"]),"gray"),
+      sector.index = receptor, track.index = 1)
   }
   #gene names track
   circos.track(track.index = 1, panel.fun = function(x, y) {
@@ -357,7 +357,7 @@ createCircosPlots = function(toExpression,LR,DE, TFR,DSA,fromName  ,toName , num
   draw(lgd_list_vertical,just = c("left", "bottom"),x = unit(1, "cm"), y = unit(1, "cm"))
   dev.off()
   print(paste0("Done making ",fromName," to ",toName))
-  
+
 }
 
 dsa_score_per_cell_all_cluster = function(obj,toExpression, DSA_Table, sacle_factor = 1){
@@ -415,8 +415,8 @@ dsa_score_mean_per_cluster = function(obj,to,from,legRet,DSA_Table, sacle_factor
 
 findMarkers_python = function(obj,id1, id2, genes_to_use = NULL, threshold=0.1){
   if (is.null(genes_to_use)){
-    return(FindMarkers(obj,ident.1 = id1,ident.2 = id2,only.pos = TRUE,
-                       min.pct = threshold, logfc.threshold = threshold,test.use = "MAST"))
+      return(FindMarkers(obj,ident.1 = id1,ident.2 = id2,only.pos = TRUE,
+                     min.pct = threshold, logfc.threshold = threshold,test.use = "MAST"))
   }else{
     print(unique(unlist(genes_to_use)))
     return(FindMarkers(obj,ident.1 = id1,ident.2 = id2,only.pos = TRUE,
@@ -427,7 +427,7 @@ findMarkers_python = function(obj,id1, id2, genes_to_use = NULL, threshold=0.1){
 deCircosPlot = function(obj,fromName, toName,lig,Rec,DSA_Table,de_recptors,pathPlot){
   print("stop1")
   markerallL = FindMarkers(obj, ident.1 = fromName,ident.2 = toName,features =lig, only.pos = TRUE,
-                           min.pct = 0.1, logfc.threshold = 0.1,test.use = "MAST")
+                          min.pct = 0.1, logfc.threshold = 0.1,test.use = "MAST")
   markerallR = FindMarkers(obj, ident.1 = toName,ident.2 = fromName,features = Rec, only.pos = TRUE,
                            min.pct = 0.1, logfc.threshold = 0.1,test.use = "MAST")
   print("stop2")
@@ -443,13 +443,13 @@ deCircosPlot = function(obj,fromName, toName,lig,Rec,DSA_Table,de_recptors,pathP
   DSAcol_fun = colorRamp2(c(0, (0.5 + abs_maxmean_weight)), c("white", "#28a10a"))
   lgd_DSA = Legend(at = c(0, (DSA_Table$DSA %>% max()/2) %>% round(digits = 2),
                           DSA_Table$DSA %>% max %>% round(digits = 2)),
-                   col_fun = DSAcol_fun, title_position = "leftcenter-rot", title = "DSA",legend_height = unit(2, "cm"))
+                          col_fun = DSAcol_fun, title_position = "leftcenter-rot", title = "DSA",legend_height = unit(2, "cm"))
   
   createCircosPlots(toExpression,legRet,DE,list(DSAcol_fun,lgd_DSA,DSA_Table),fromName,toName,"de",obj,de_recptors,path = pathPlot) 
 }
 
 DSA_PLOT_TSNE = function(obj,fromName,toName,plot_path = NULL){
-  DSAPlot = FeaturePlot(obj,reduction = "tsne", features = c("DSA_SCORE"),pt.size=1.5)  +
+ DSAPlot = FeaturePlot(obj,reduction = "tsne", features = c("DSA_SCORE"),pt.size=1.5)  +
     scale_colour_gradientn(colours = jet.colors(10)) + th
   if(is.null(plot_path)){
     ggsave( plot = DSAPlot, filename =  paste0(fromName,"_",toName,"_","DSAPlot.pdf"),path = paste(sep = "" ,getwd(),"/plotOut"), device = "pdf")

@@ -7,20 +7,18 @@ from sklearn.ensemble import RandomForestClassifier
 import scipy.stats as sc
 import pickle
 
-
-def test_sig_as_classfier(exp, up, down=list()):
-    cls = np.intersect1d(up + down + ["ident"], exp.columns)
-    sub_exp = exp[cls]
-
-    up_ls, down_ls = random_forst_expresstion(sub_exp, "sig_compere")
-    pup = len(np.intersect1d(up, up_ls["feture"])) / len(up_ls)
-    pdown = len(np.intersect1d(down, down_ls["feture"])) / len(down_ls)
-    print("pup = " + str(pup))
-    print("pdown = " + str(pdown))
-    return up_ls, down_ls
-
-
-def random_forst_expresstion(exp, plot_name="result", returnModle=False):
+def test_sig_as_classfier(exp,up,down = list()):
+  cls = np.intersect1d(up+down + ["ident"],exp.columns)
+  sub_exp = exp[cls]
+  
+  up_ls, down_ls = random_forst_expresstion(sub_exp,"sig_compere")
+  pup =  len(np.intersect1d(up,up_ls["feture"]))/len(up_ls)
+  pdown = len(np.intersect1d(down,down_ls["feture"]))/len(down_ls)
+  print("pup = " + str(pup))
+  print("pdown = " + str(pdown))
+  return up_ls,down_ls
+  
+def random_forst_expresstion(exp , plot_name = "result", returnModle = False):
     new_exp = exp.sample(frac=1)
     new_exp.index = [i for i in range(len(new_exp))]
     pred_list = list()
@@ -38,7 +36,7 @@ def random_forst_expresstion(exp, plot_name="result", returnModle=False):
     imp2_stats = list()
     imp1_imp = list()
     imp2_imp = list()
-
+    print("Stop-1")
     for i in range(10):
         test_sub = new_exp[i * size:min((i + 1) * size, len(new_exp))]
         traning_sub = new_exp.drop(axis=0, labels=[j for j in range(i * size, min((i + 1) * size, len(new_exp)))])
@@ -50,13 +48,13 @@ def random_forst_expresstion(exp, plot_name="result", returnModle=False):
         pred_list.append(clf.predict(test_sub.drop(axis=1, labels="ident")))
         prob_list.append(clf.predict_proba(test_sub.drop(axis=1, labels="ident")))
         target_list.append(test_sub["ident"])
-
+    print("Stop1")    
     index = print_output_of_random_forst(target_list, pred_list)
-    roc_test(prob_list, target_list, plot_name)
-
+    roc_test(prob_list, target_list,plot_name)
+    print("Stop2")    
     clf = clf_save[index]
     imp = clf.feature_importances_
-
+    print("Stop3")    
     for index, col in enumerate(new_exp.drop(axis=1, labels="ident").columns):
         feture_import[imp[index]] = col
 
@@ -64,84 +62,84 @@ def random_forst_expresstion(exp, plot_name="result", returnModle=False):
         imp_sort.append(key)
 
     imp_sort.sort(reverse=True)
-
+      
+   
     for key in imp_sort:
-        feture = feture_import[key]
-        s1, p1 = ttest_feture(feture, new_exp)
-        if s1 > 0 and p1 <= 0.05:
-            imp1_pval.append(p1)
-            imp1_feture.append(feture)
-            imp1_imp.append(key)
-            imp1_stats.append(s1)
-
-        elif s1 < 0 and p1 <= 0.05:
-            imp2_pval.append(p1)
-            imp2_feture.append(feture)
-            imp2_imp.append(key)
-            imp2_stats.append(s1)
-
-    dict1 = {"feture": imp1_feture, "importances value": imp1_imp, "P_value": imp1_pval, "statstic": imp1_stats}
-    imp_feture_up = pd.DataFrame(dict1)
-    dict2 = {"feture": imp2_feture, "importances value": imp2_imp, "P_value": imp2_pval, "statstic": imp2_stats}
-    imp_feture_down = pd.DataFrame(dict2)
-
+      feture = feture_import[key]
+      s1,p1 = ttest_feture(feture,new_exp)
+      if s1 > 0 and p1 <= 0.05:
+        imp1_pval.append(p1)
+        imp1_feture.append(feture)
+        imp1_imp.append(key)
+        imp1_stats.append(s1)
+      
+      elif s1 < 0 and p1 <= 0.05:
+         imp2_pval.append(p1)
+         imp2_feture.append(feture)
+         imp2_imp.append(key)
+         imp2_stats.append(s1)
+    print("Stop4")    
+    imp_feture_up = {"feture":imp1_feture,"importances value": imp1_imp ,"P_value":imp1_pval, "statstic": imp1_stats}
+    #imp_feture_up = pd.DataFrame(dict1)
+    imp_feture_down = {"feture":imp2_feture,"importances value": imp2_imp,"P_value":imp2_pval, "statstic": imp2_stats}
+   # imp_feture_down = pd.DataFrame(dict2)
+    
     if returnModle:
-        return imp_feture_up, imp_feture_down, clf
-
+      return imp_feture_up, imp_feture_down, clf 
+    
+    print("Stop5")    
     return imp_feture_up, imp_feture_down
 
+def use_ex_modle(mod,test_data,plot_name = "result"):
+  test_data = test_data.sample(frac=1)
+  test_data.index = [i for i in range(len(test_data))]
+  feture_import = dict()
+  imp_sort = list()
+  imp1_pval = list()
+  imp1_feture = list()
+  imp1_stats = list()
+  imp2_pval = list()
+  imp2_feture = list()
+  imp2_stats = list()
+  imp1_imp = list()
+  imp2_imp = list()
+    
+  predict = mod.predict(test_data.drop(axis=1, labels="ident"))
+  predict_prob = mod.predict_proba(test_data.drop(axis=1, labels="ident"))
+  auc = roc_auc_score(test_data["ident"],predict_prob[:, 1])
+  print("total auc: " + str(auc))
+  plot_roc_carve(test_data["ident"],predict_prob[:,1],auc,plot_name)
+  imp = mod.feature_importances_
 
-def use_ex_modle(mod, test_data, plot_name="result"):
-    test_data = test_data.sample(frac=1)
-    test_data.index = [i for i in range(len(test_data))]
-    feture_import = dict()
-    imp_sort = list()
-    imp1_pval = list()
-    imp1_feture = list()
-    imp1_stats = list()
-    imp2_pval = list()
-    imp2_feture = list()
-    imp2_stats = list()
-    imp1_imp = list()
-    imp2_imp = list()
+  for index, col in enumerate(test_data.drop(axis=1, labels="ident").columns):
+      feture_import[imp[index]] = col
 
-    predict = mod.predict(test_data.drop(axis=1, labels="ident"))
-    predict_prob = mod.predict_proba(test_data.drop(axis=1, labels="ident"))
-    auc = roc_auc_score(test_data["ident"], predict_prob[:, 1])
-    print("total auc: " + str(auc))
-    plot_roc_carve(test_data["ident"], predict_prob[:, 1], auc, plot_name)
-    imp = mod.feature_importances_
+  for key in feture_import.keys():
+      imp_sort.append(key)
 
-    for index, col in enumerate(test_data.drop(axis=1, labels="ident").columns):
-        feture_import[imp[index]] = col
+  imp_sort.sort(reverse=True)
 
-    for key in feture_import.keys():
-        imp_sort.append(key)
-
-    imp_sort.sort(reverse=True)
-
-    for key in imp_sort:
-        feture = feture_import[key]
-        s1, p1 = ttest_feture(feture, test_data)
-        if s1 > 0 and p1 <= 0.05:
-            imp1_pval.append(p1)
-            imp1_feture.append(feture)
-            imp1_imp.append(key)
-            imp1_stats.append(s1)
-
-        elif s1 < 0 and p1 <= 0.05:
-            imp2_pval.append(p1)
-            imp2_feture.append(feture)
-            imp2_imp.append(key)
-            imp2_stats.append(s1)
-
-    dict1 = {"feture": imp1_feture, "importances value": imp1_imp, "P_value": imp1_pval, "statstic": imp1_stats}
-    imp_feture_up = pd.DataFrame(dict1)
-    dict2 = {"feture": imp2_feture, "importances value": imp2_imp, "P_value": imp2_pval, "statstic": imp2_stats}
-    imp_feture_down = pd.DataFrame(dict2)
-
-    return imp_feture_up, imp_feture_down
-
+  for key in imp_sort:
+    feture = feture_import[key]
+    s1, p1 = ttest_feture(feture,test_data)
+    if s1 > 0 and p1 <= 0.05:
+      imp1_pval.append(p1)
+      imp1_feture.append(feture)
+      imp1_imp.append(key)
+      imp1_stats.append(s1)
+    
+    elif s1 < 0 and p1 <= 0.05:
+       imp2_pval.append(p1)
+       imp2_feture.append(feture)
+       imp2_imp.append(key)
+       imp2_stats.append(s1)
+       
+  dict1 = {"feture":imp1_feture,"importances value": imp1_imp ,"P_value":imp1_pval, "statstic": imp1_stats}
+  imp_feture_up = pd.DataFrame(dict1)
+  dict2 = {"feture":imp2_feture,"importances value": imp2_imp,"P_value":imp2_pval, "statstic": imp2_stats}
+  imp_feture_down = pd.DataFrame(dict2)
+  
+  return imp_feture_up, imp_feture_down
 
 def ttest_feture(feture, data):
     pop1 = data.loc[data["ident"] == 0, feture]
@@ -150,7 +148,6 @@ def ttest_feture(feture, data):
     s1, p1 = sc.ttest_ind(np.array(pop1), np.array(pop2))
 
     return s1, p1
-
 
 def print_output_of_random_forst(target_list, pred_list):
     n = len(target_list)
@@ -177,8 +174,7 @@ def print_output_of_random_forst(target_list, pred_list):
 
     return max_index
 
-
-def roc_test(prob_list, target_list, plot_name="result"):
+def roc_test(prob_list, target_list, plot_name = "result"):
     all_prob = []
     all_target = []
 
@@ -188,35 +184,34 @@ def roc_test(prob_list, target_list, plot_name="result"):
 
     auc = roc_auc_score(all_target, all_prob)
     print("total auc: " + str(auc))
+    
+  #  fpr, tpr, threshold = roc_curve(all_target, all_prob)
+  #  plt.plot(fpr, tpr, linestyle='--', label='Random Forest AUC')
+  #  plt.plot([0, 1], [0, 1], "--")
+  #  plt.title("Random Forest Classifier AUC Value: " + str(round(auc, 3)))
+  #  plt.xlim([-0.01, 1.01])
+  #  plt.ylim([-0.01, 1.01])
+  #  plt.xlabel("FPR RATE")
+  #  plt.ylabel("TPR RATE")
+    #plt.savefig(plot_name + ".pdf",bbox_inches='tight',transparent=True,pad_inches=0.5)
 
-    fpr, tpr, threshold = roc_curve(all_target, all_prob)
-    plt.plot(fpr, tpr, linestyle='--', label='Random Forest AUC')
-    plt.plot([0, 1], [0, 1], "--")
-    plt.title("Random Forest Classifier AUC Value: " + str(round(auc, 3)))
-    plt.xlim([-0.01, 1.01])
-    plt.ylim([-0.01, 1.01])
-    plt.xlabel("FPR RATE")
-    plt.ylabel("TPR RATE")
-    plt.savefig(plot_name + ".pdf", bbox_inches='tight', transparent=True, pad_inches=0.5)
+    
+   # return tpr, fpr
 
-    return tpr, fpr
-
-
-def plot_roc_carve(target, prob, auc, plot_Name="result"):
-    fpr, tpr, threshold = roc_curve(target, prob)
-    plt.plot(fpr, tpr, linestyle='--', label='Random Forest AUC')
-    plt.plot([0, 1], [0, 1], "--")
-    plt.title("Random Forest Classifier AUC Value: " + str(round(auc, 3)))
-    plt.xlim([-0.01, 1.01])
-    plt.ylim([-0.01, 1.01])
-    plt.xlabel("FPR RATE")
-    plt.ylabel("TPR RATE")
-    plt.savefig(plot_Name + ".pdf", bbox_inches='tight', transparent=True, pad_inches=0.5)
-    return fpr, tpr
-
+def plot_roc_carve(target, prob,auc, plot_Name = "result"):
+  fpr, tpr, threshold = roc_curve(target, prob)
+  plt.plot(fpr, tpr, linestyle='--', label='Random Forest AUC')
+  plt.plot([0, 1], [0, 1], "--")
+  plt.title("Random Forest Classifier AUC Value: " + str(round(auc, 3)))
+  plt.xlim([-0.01, 1.01])
+  plt.ylim([-0.01, 1.01])
+  plt.xlabel("FPR RATE")
+  plt.ylabel("TPR RATE")
+  plt.savefig(plot_Name + ".pdf",bbox_inches='tight',transparent=True,pad_inches=0.5)
+  return fpr, tpr
 
 if __name__ == "__main__":
     pass
-    # exp = pd.read_csv("exp.csv", index_col=None)
-# print(exp)
-# l1,l2 = random_forst_expresstion(exp)
+    #exp = pd.read_csv("exp.csv", index_col=None)
+   # print(exp)
+    #l1,l2 = random_forst_expresstion(exp)

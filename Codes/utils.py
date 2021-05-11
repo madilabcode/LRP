@@ -10,7 +10,6 @@ import zlib, json, base64
 def intersection(lst1, lst2):
     return [value for value in lst1 if value in lst2]
 
-
 def align_clusters(orig, active1, active2, name1, name2, format1=None, format2=None):
     format1 = dict(format1)
     format2 = dict(format2)
@@ -188,3 +187,4 @@ def json_unzip(zp, ZIPJSON_KEY='base64(zip(o))'):
     except:
         raise RuntimeError("Could interpret the unzipped contents")
     return js
+

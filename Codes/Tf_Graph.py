@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 import scipy.stats as sc
 import networkx as nx
 import pickle
-import statsmodels.stats.multitest
+from Codes import CERNO as ce
 
 
 class Obj_dict:
@@ -31,7 +31,6 @@ class graphs_dict:
         self.capcity_network = capcity_network
         self.max_flow_dict = self.calculate_max_flow_for_all_recp()
         self.max_multy_flow = None
-        self.p_value_per_recp = None
 
     def sub_capcity_gaph_to_dict(self):
         sub = nx.to_pandas_edgelist(self.capcity_network)
@@ -234,39 +233,25 @@ class graphs_dict:
         result["notTorS"] = result.apply(lambda row: True if row["source"] != "t" and row["target"] != "s" else False,
                                          axis=1)
         return result.loc[result["notTorS"], ["source", "target", "flow"]]
-
+        
+    def calculate_max_flow_for_one_tf(self, tf):
+        pa = self.add_t_to_network()
+        cols = ["source", "target", "capacity"]
+        pa["istf"] = pa.apply(lambda row: True if row["source"] != "s" or row["target"].find(tf) >= 0 else False,
+                              axis=1)
+        pa = pa.loc[pa["istf"], cols]
+        gpf = nx.from_pandas_edgelist(pa, "source", "target", edge_attr="capacity", create_using=nx.DiGraph())
+        flow = nx.maximum_flow(gpf, "s", "t", flow_func=nx.algorithms.flow.dinitz)[1]
+        result = self.make_df_flow(flow=flow)
+        result["notTorS"] = result.apply(lambda row: True if row["source"] != "t" and row["target"] != "s" else False,
+                                         axis=1)
+        return result.loc[result["notTorS"], ["source", "target", "flow"]]
+        
     def calculate_p_value_for_recp(self, rec, num_of_perm=1000, fix_rec=True):
         flow_list = []
         stat = nx.maximum_flow(self.capcity_network, "s", rec + "_Source", flow_func=nx.algorithms.flow.dinitz)[0]
         graph = nx.to_pandas_edgelist(self.capcity_network)
 
-        for i in range(num_of_perm):
-            print(i)
-            graph_df = graph.copy()
-            if fix_rec:
-                graph_df.loc[(graph_df["capacity"] < np.inf) & (graph_df["target"] != rec + "_Source"), "capacity"] = \
-                    np.array(graph_df.loc[(graph_df["capacity"] < np.inf) & (
-                            graph_df["target"] != rec + "_Source"), "capacity"].sample(frac=1,
-                                                                                       random_state=np.random.RandomState()))
-            else:
-                graph_df.loc[graph_df["capacity"] < np.inf, "capacity"] = \
-                    np.array(graph_df.loc[graph_df["capacity"] < np.inf, "capacity"].sample(frac=1,
-                                                                                            random_state=np.random.RandomState()))
-            temp_graph = nx.from_pandas_edgelist(graph_df, "source", "target", edge_attr="capacity",
-                                                 create_using=nx.DiGraph())
-            flow_list.append(nx.maximum_flow(temp_graph, "s", rec + "_Source", flow_func=nx.algorithms.flow.dinitz)[0])
-
-        p_value = len(list(filter(lambda x: x >= stat, flow_list))) / num_of_perm
-        return p_value
-
-    def calculate_p_value_for_all_recp(self, num_of_perm=100, fix_rec=False):
-        if self.p_value_per_recp is None:
-            p_val_array = [self.calculate_p_value_for_recp(rec, num_of_perm=num_of_perm, fix_rec=fix_rec)
-                           for rec in self.flow_dics.keys()]
-            p_val_array = list(map(lambda x: x[1], map(statsmodels.stats.multitest.fdrcorrection, p_val_array)))
-            self.p_value_per_recp = {key: p_val_array[index][0] for index, key in enumerate(self.flow_dics.keys())}
-
-        return self.p_value_per_recp
 
 
 def shortest_path(grpah, node1, node2, upload_name="temp_grpah"):
@@ -466,7 +451,8 @@ def build_active_network(ProtAction, ProtInfo, exp):
 
 
 def DSA_anaylsis(exp, recptors, ProtAction, ProtInfo, tfs, use_location_capacity=False):
-    tfs_scores = hiper_test_tfs(exp, tfs)
+    #tfs_scores = hiper_test_tfs(exp, tfs)
+    tfs_scores = ce.CERNO_alg(exp.apply(np.sum, axis=1),tfs)
     gpf = bulild_flowing_network_tf(ProtAction, ProtInfo, tfs_scores, exp)
     flow_values = []
     flow_dicts = {}
@@ -484,7 +470,7 @@ def DSA_anaylsis(exp, recptors, ProtAction, ProtInfo, tfs, use_location_capacity
     df.index = list(map(lambda val: val[0], flow_values))
     df["Recp"] = df.index
     gd = graphs_dict(flow_dicts, gpf)
-    #gd.calculate_p_value_for_all_recp(num_of_perm=100))
+
     return df, gd
 
 
