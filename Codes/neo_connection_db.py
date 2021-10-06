@@ -1,4 +1,4 @@
-from py2neo import Graph, Node, Relationship, NodeMatcher, RelationshipMatcher, Neo4jError
+from py2neo import Graph, Node, Relationship, NodeMatcher, RelationshipMatcher
 import numpy as np
 import pandas as pd
 import json

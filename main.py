@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from bounded_pool_executor import BoundedProcessPoolExecutor
 #import anndata2ri as ri
 from rpy2.robjects import r
 from rpy2 import robjects as ro
@@ -243,8 +242,8 @@ def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=20):
                 args.append((toExpressionTr, toExpressionCo, fromExpressionTr, fromExpressionCo,
                              f"plotOut/ROC/RocResult{fromName}_{toName}", lst_Tr[0][toName][fromName], lst_Co[0][toName][fromName]))
 
-    with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
-    #with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+   # with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
 
         results = list(executor.map(_helper_Classfier, args))
 
