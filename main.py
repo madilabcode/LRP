@@ -20,29 +20,28 @@ def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False)
     ProtNamesInfo = pd.read_csv("files/humanProtinInfo.csv")
     ProtActions = pd.read_csv("files/humanProtinAction.csv")
     subset = r("subset")
-    lst = pyd.main_py_to_R(ProtNamesInfo, ProtActions)
-    TfDict = lst[0]
-
-    obj = r(f"readRDS('{path}')")
-
+   
     with localconverter(default_converter + rpyp.converter):
+        lst = pyd.main_py_to_R(ProtNamesInfo, ProtActions)
+        TfDict = lst[0]
+        obj = r(f"readRDS('{path}')")
         createLRtable = r("createLRtable")
         DElegenedNcolor = r("DElegenedNcolor")
 
-        obj = subset(obj,ident=[toName,fromName])
+        obj = subset(obj, ident=[toName, fromName])
         r("gc()")
         toExpression, fromExpression = ExpTables(obj, toName, fromName)
         try:
-            LR = createLRtable(obj, toExpression, fromExpression, fromName, toName, 'counts', thrshold = thrshold)
+            LR = createLRtable(obj, toExpression, fromExpression, fromName, toName, 'counts', thrshold=thrshold)
         except Exception as e:
-          LR = None
-          print(e)
-        
+            LR = None
+            print(e)
+
         if len(LR) != 3:
             del obj
             return None
-            
-        DE = DElegenedNcolor(obj,fromName,toName, LR[0], LR[1], LR[2])
+
+        DE = DElegenedNcolor(obj, fromName, toName, LR[0], LR[1], LR[2])
 
         if len(DE) == 0:
             del obj
@@ -76,7 +75,6 @@ def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False)
             obj = dsa_score_per_cell_all_cluster(obj, toExpression, DSA_Table)
 
         else:
-            dsa_score_per_cell = r("dsa_score_per_cell")
             obj = dsa_score_per_cell(obj, toExpression, DSA_Table)
 
         if plot_path is not None:
@@ -85,10 +83,41 @@ def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False)
         else:
             DSA_PLOT_TSNE(obj, fromName, toName)
             del obj
-            
+
     r("rm(list = ls())")
     r("gc()")
     return legRet, DSA_Table, DSA_lst[1]
+
+
+def dsa_score_per_cell(obj, toExpression, DSA_Table, sacle_factor=1):
+    mdata = r("function(obj,col='DSA_SCORE') ifelse(col %in% (obj@meta.data %>% names()),1,0)")
+    mdata_col = r("function(obj,col='DSA_SCORE') obj@meta.data[col]")
+    add_to_meta = r("""function(obj,values,cells,col='DSA_SCORE') {
+            names(values) = cells
+           obj[[col]] = values
+           return (obj)
+            }""")
+    with localconverter(default_converter + rpyp.converter):
+        toExpression = toExpression.loc[list(filter(lambda x: x in DSA_Table.Recp, toExpression.index))]
+        for row in range(toExpression.shape[0]):
+            toExpression.iloc[row, :] = (np.log1p(toExpression.iloc[row, :]) * float(
+                DSA_Table.loc[DSA_Table.Recp == toExpression.index[row], :].DSA))
+
+        if not mdata(obj)[0]:
+            dsa_score = pd.Series(None, toExpression.columns)
+        else:
+            dsa_score = pd.Series(mdata_col(obj), toExpression.columns)
+
+        dsa_score = pd.DataFrame(dsa_score)
+        dsa_score.columns = ["DSA_SCORE"]
+        dsa_per_cell = toExpression.apply(sum)
+        dsa_per_cell = dsa_per_cell * sacle_factor
+        dsa_per_cell = pd.DataFrame(dsa_per_cell)
+        dsa_per_cell.columns = ["dsa_per_cell"]
+        DSA_temp = pd.merge(dsa_score, dsa_per_cell, how="left", left_index=True, right_index=True)
+        DSA_temp["DSA_SCORE"] = DSA_temp.apply(
+            lambda x: x["dsa_per_cell"] if np.isnan(x["DSA_SCORE"]) else x["DSA_SCORE"], axis=1)
+        return add_to_meta(obj, DSA_temp["DSA_SCORE"], DSA_temp["DSA_SCORE"].index)
 
 
 def _helper_LRP(x):
@@ -102,8 +131,8 @@ def _helper_Classfier(args):
     return build_or_use_classfier(*args)
  
 
-def ExpTables(obj, toName, fromName, assay="scale.data"):
-    with localconverter(default_converter + rpyp.converter):
+def ExpTables(obj, toName, fromName, assay="counts"):
+     with localconverter(default_converter + rpyp.converter):
         r("library(Seurat)")
         subset = r("subset")
         GetAssayData = r("GetAssayData")
@@ -118,7 +147,7 @@ def ExpTables(obj, toName, fromName, assay="scale.data"):
         return toExpression, fromExpression
 
 
-def run_pipline(args, objName, max_workers=1):
+def run_pipline(args, objName, max_workers=20):
     r["source"]("Codes/Ligand_Receptor_pipeline.R")
     legRetList = {}
     DSA_Tables = {}
@@ -227,12 +256,18 @@ def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=20):
         up[toName] = {}
         down[toName] = {}
         for fromName in fromVec:
-          if toName != fromName and len(results) > counter:
-              if len(results[counter]) > 1:
-                up[toName][fromName] = pd.DataFrame(results[counter][1])
-              if len(results[counter]) > 2:
-                down[toName][fromName] = pd.DataFrame(results[counter][2])
-          counter += 1
+            if toName != fromName and len(results) > counter:
+                if len(results[counter]) > 1:
+                    tempUp = pd.DataFrame(results[counter][1])
+                    tempUp["importances value"] = tempUp["importances value"] / tempUp["importances value"].max()
+                    tempUp  = tempUp.loc[tempUp["importances value"] > 0.1]
+                    up[toName][fromName]= tempUp
+                if len(results[counter]) > 2:
+                    tempDown = pd.DataFrame(results[counter][2])
+                    tempDown["importances value"] = tempDown["importances value"] / tempDown["importances value"].max()
+                    tempDown  = tempDown.loc[tempDown["importances value"] > 0.1]
+                    down[toName][fromName]= tempDown
+            counter += 1
 
     tfg.save_obj(up, f"outputObj/up_{name_obj_clf}")
     tfg.save_obj(down, f"outputObj/down_{name_obj_clf}")
@@ -458,4 +493,3 @@ if __name__ == "__main__":
     # print(os.getcwd())
      main()
     #test_function()
-
