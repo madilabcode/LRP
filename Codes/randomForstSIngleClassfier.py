@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import math
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
 import scipy.stats as sc
@@ -142,10 +142,10 @@ def use_ex_modle(mod,test_data,plot_name = "result"):
   return imp_feture_up, imp_feture_down
 
 def ttest_feture(feture, data):
-    pop1 = data.loc[data["ident"] == 0, feture]
-    pop2 = data.loc[data["ident"] == 1, feture]
+    pop1 = data.loc[data["ident"] == 1, feture]
+    pop0 = data.loc[data["ident"] == 0, feture]
 
-    s1, p1 = sc.ttest_ind(np.array(pop1), np.array(pop2))
+    s1, p1 = sc.ttest_ind(np.array(pop1), np.array(pop0))
 
     return s1, p1
 
@@ -199,16 +199,17 @@ def roc_test(prob_list, target_list, plot_name = "result"):
    # return tpr, fpr
 
 def plot_roc_carve(target, prob,auc, plot_Name = "result"):
-  fpr, tpr, threshold = roc_curve(target, prob)
-  plt.plot(fpr, tpr, linestyle='--', label='Random Forest AUC')
-  plt.plot([0, 1], [0, 1], "--")
-  plt.title("Random Forest Classifier AUC Value: " + str(round(auc, 3)))
-  plt.xlim([-0.01, 1.01])
-  plt.ylim([-0.01, 1.01])
-  plt.xlabel("FPR RATE")
-  plt.ylabel("TPR RATE")
-  plt.savefig(plot_Name + ".pdf",bbox_inches='tight',transparent=True,pad_inches=0.5)
-  return fpr, tpr
+#  fpr, tpr, threshold = roc_curve(target, prob)
+#  plt.plot(fpr, tpr, linestyle='--', label='Random Forest AUC')
+#  plt.plot([0, 1], [0, 1], "--")
+#  plt.title("Random Forest Classifier AUC Value: " + str(round(auc, 3)))
+#  plt.xlim([-0.01, 1.01])
+#  plt.ylim([-0.01, 1.01])
+#  plt.xlabel("FPR RATE")
+#  plt.ylabel("TPR RATE")
+#  plt.savefig(plot_Name + ".pdf",bbox_inches='tight',transparent=True,pad_inches=0.5)
+#  return fpr, tpr
+  pass
 
 if __name__ == "__main__":
     pass

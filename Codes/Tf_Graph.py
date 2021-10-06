@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import math
 from rpy2.robjects import r
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
 import scipy.stats as sc

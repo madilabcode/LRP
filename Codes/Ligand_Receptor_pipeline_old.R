@@ -20,7 +20,8 @@ library(formattable)
 library(kableExtra)
 library(reticulate)
 library(hash)
-#source_python('Codes/Tf_Graph.py') 
+source_python('Codes/Tf_Graph.py') 
+source_python("Codes/utils.py")
 
 #title: "Ligand Recptor pipline algorithm"
 #author: "Ron Sheinin"
@@ -40,34 +41,13 @@ th = theme_bw() +
     axis.title.y = element_text(size = 24,angle=90),
     legend.text=element_text(size=12))
 
-colors_set = function(){
-  jet.colors = colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+createLRtable = function(seuratObj,LigandReceptorTable,fromName = fromName,toName=toName,assyaName,thrshold = 0.1,num2compare = "de"){
   
-  th = theme_bw() +
-    theme(
-      plot.title = element_text(size = 24),
-      axis.text.x = element_text(size = 24, color='black'),
-      axis.text.y = element_text(size = 24, color='black'),
-      strip.text.x = element_text(size = 24, color='black',angle=90),
-      strip.text.y = element_text(size = 24, color='black',angle=90),
-      axis.title.x = element_text(size = 24, color='black'),
-      axis.title.y = element_text(size = 24,angle=90),
-      legend.text=element_text(size=12))
-  return(list(th,jet.colors))
-}
-
-python_phyper = function(q,m,n,k){
-  return = phyper(q,m,n,k,lower.tail = FALSE)
-}
-
-#source_python("Tf_Graph.py") 
-createLRtable = function(seuratObj,toExpression,fromExpression,fromName = fromName,toName=toName,assyaName,thrshold = 0.1,num2compare = "de"){
-  #print(toExpression)
-  LigandReceptorTable = read.delim("files/LigandReceptorTableMouse.tsv",sep = "\t", header = T, quote = "" )  
-  #remove overlaps between ligand and receptor
-  LigandReceptorTable = LigandReceptorTable[!LigandReceptorTable$from %in% LigandReceptorTable$to,]
-  LigandReceptorTable = LigandReceptorTable[!LigandReceptorTable$to %in% LigandReceptorTable$from,]
-  
+  Expression = GetAssayData(object = seuratObj, slot = assyaName) %>% as.data.frame()
+  toN = names(seuratObj@active.ident[seuratObj@active.ident %in% toName])
+  fromN = names(seuratObj@active.ident[seuratObj@active.ident %in% fromName])
+  toExpression = Expression[,names(Expression) %in% toN]
+  fromExpression = Expression[,names(Expression) %in% fromN]
   remove(Expression)
   
   
@@ -127,22 +107,18 @@ createLRtable = function(seuratObj,toExpression,fromExpression,fromName = fromNa
     totop = subset(toMean, meanExp > toTD)
     
   }else if (num2compare ==  "de"){
-    de_genes_redction = function(geneT,id,genes){
+    de_genes_redction = function(geneT,id){
       markerall = FindMarkers(seuratObj, ident.1 = id, only.pos = TRUE,
-                              min.pct = thrshold,features  = genes , logfc.threshold = thrshold,test.use = "MAST")
+                              min.pct = 0.2, logfc.threshold = 0.2,test.use = "MAST")
       
       geneT$geneName = row.names(geneT)
       geneT = geneT[which(row.names(geneT) %in% row.names(markerall)),]
       return (list(markerall,geneT))
     }
-    #print(rownames(fromLigands))
-    ft = de_genes_redction(fromMean,fromName, rownames(fromLigands))
-    tt = de_genes_redction(toMean,toName, rownames(toReceptors))
+    ft = de_genes_redction(fromMean,fromName)
+    tt = de_genes_redction(toMean,toName)
     
-    #fromtop = ft[[2]]
-    fromTQ = fromMean$meanExp %>% quantile() %>% .["75%"]
-    fromtop = subset(fromMean, meanExp > fromTQ)
-    #print(fromtop)
+    fromtop = ft[[2]]
     markerallL = ft[[1]]
     totop = tt[[2]]
     markerallR = tt[[1]]
@@ -152,20 +128,14 @@ createLRtable = function(seuratObj,toExpression,fromExpression,fromName = fromNa
   }
   
   LigandReceptorTableSub = LigandReceptorTable[,c(1,2)] %>% unique()
-  #LigandReceptorTableSub = LigandReceptorTableSub[which(LigandReceptorTableSub$from %in% rownames(fromtop) & LigandReceptorTableSub$to %in% rownames(totop)),]
   LigandReceptorTableSub = LigandReceptorTableSub[which(LigandReceptorTableSub$from %in% rownames(fromtop) & LigandReceptorTableSub$to %in% rownames(totop)),]
-  #print(LigandReceptorTableSub)
+  #LigandReceptorTableSub = LigandReceptorTableSub[which(LigandReceptorTableSub$to %in% rownames(totop)),]
   if (dim(LigandReceptorTableSub)[1] == 0){
     return("ex")
   }
   
   for(i in unique(LigandReceptorTableSub$from)){
-    if (i %in% rownames(fromtop)){
-      expVal = fromMean[which(rownames(fromtop) == i),"meanExp"]
-      #print(expVal)
-    }
-    #expVal = mean(fromExpression[row.names(fromExpression) == i,])
-    #expVal = fromtop[which(rownames(fromtop) == i),"meanExp"]
+    expVal = fromtop[which(rownames(fromtop) == i),"meanExp"]
     LigandReceptorTableSub[which(LigandReceptorTableSub$from == i),"fromEXP"] = expVal}
   
   for(i in unique(LigandReceptorTableSub$to)){
@@ -183,13 +153,17 @@ createLRtable = function(seuratObj,toExpression,fromExpression,fromName = fromNa
     LR[4] = log10(LR[4])
   }
   if (num2compare ==  "de"){
-    return(list(as.data.frame(LR),as.data.frame(markerallL),as.data.frame(markerallR)))
+    return(list(LR,markerallL,markerallR))
   }else{
     return(LR)
   }
 }
 
-DElegenedNcolor = function(seuratObj,   fromName, toName, LR,markerallL = NULL,markerallR = NULL, use_location_capacity = FALSE){ 
+python_phyper = function(q,m,n,k){
+  return = phyper(q,m,n,k,lower.tail = FALSE)
+}
+
+DElegenedNcolor = function(seuratObj, fromName, toName, LR,markerallL = NULL,markerallR = NULL, use_location_capacity = FALSE){ 
   #***create the color function and legend for differential expression data***#
   
   if (is.null(markerallL) | is.null(markerallR)){
@@ -224,23 +198,39 @@ DElegenedNcolor = function(seuratObj,   fromName, toName, LR,markerallL = NULL,m
   return(list(DEcol_fun,lgd_DE,DE_Data_Sub))
 }
 
-DSAlegenedNcolor = function(allReceptorDSA){
+TF_DSA_FUNC_dircted  = function(ProtNamesInfo,ProtActions,toExpression,legRet ,TfDict, path = "C:/Users/Ron/Desktop/10X_Eilam" ){ 
+  setwd(path)
+  DSA = DSA_anaylsis(toExpression,legRet$Receptor,ProtActions,ProtNamesInfo,tfs = TfDict)
+  DSA_Table = DSA[[1]]
+  DSA_grpahs = DSA[[2]]
+  return(list(DSA_Table,DSA_grpahs))
+}
+ 
+DSAlegenedNcolor = function(DSAFunck, ProtNamesInfo,ProtActions,toExpression,legRet,TfDict,path = "C:/Users/Ron/Desktop/10X_Eilam" ){
+  DSA = DSAFunck(ProtNamesInfo,ProtActions,toExpression,legRet,TfDict,path)
+  allReceptorDSA = DSA[[1]]
+  DSA_grpahs = DSA[[2]]
   #allReceptorDSASacle = allReceptorDSA
   allReceptorDSA$DSA = allReceptorDSA$DSA
   allReceptorDSA = allReceptorDSA[allReceptorDSA$DSA != Inf &  allReceptorDSA$DSA > 0,]
-
+  
+  if (length(allReceptorDSA$DSA) == 0){
+    return("ex")
+  }
+  
   abs_maxmean_weight = quantile(abs(c(allReceptorDSA$DSA) - 0.5),0.85, na.rm = TRUE)
   DSAcol_fun = colorRamp2(c(0, (0.5 + abs_maxmean_weight)), c("white", "#28a10a"))
   lgd_DSA = Legend(at = c(0, (allReceptorDSA$DSA %>% max()/2) %>% round(digits = 2),
                           allReceptorDSA$DSA %>% max %>% round(digits = 2)),
                    col_fun = DSAcol_fun, title_position = "leftcenter-rot", title = "DSA",legend_height = unit(2, "cm"))
-  return(list(DSAcol_fun,lgd_DSA,allReceptorDSA))
+  return(list(DSAcol_fun,lgd_DSA,allReceptorDSA,DSA_grpahs))
 }
 
-createCircosPlots = function(toExpression,LR,DE, TFR,DSA,fromName  ,toName , num2compare, seuratObj,de_recptors = NULL,path = "/plotOut"){
+createCircosPlots = function(toExpression,LR,DE ,DSA,fromName  ,toName , num2compare, seuratObj,de_recptors = NULL,path = "/plotOut"){
   #***integrate everything and create the circos plot***#
+  TFR = hash(DSA[[4]]$Tfs_Per_Recp_in_max_flow())
   maxTf = 0
-  for (key in names(TFR)){
+  for (key in keys(TFR)){
     if(TFR[[key]] > maxTf){
       maxTf =  as.numeric(TFR[[key]])
     }
@@ -412,25 +402,75 @@ dsa_score_mean_per_cluster = function(obj,to,from,legRet,DSA_Table, sacle_factor
   return(mean(dsa_with_lig(toExpression,fromGExpression,DSA_Table,legRet)))
 }
 
-
-findMarkers_python = function(obj,id1, id2, genes_to_use = NULL, threshold=0.1){
-  if (is.null(genes_to_use)){
-      return(FindMarkers(obj,ident.1 = id1,ident.2 = id2,only.pos = TRUE,
-                     min.pct = threshold, logfc.threshold = threshold,test.use = "MAST"))
+build_or_use_classfier = function(obj1,obj2,from1,from2,to1,to2,lr1,lr2=NULL,modle = NULL){
+  toGenes_1  = subset(obj1, idents = to1)
+  toExpression_1  = GetAssayData(object = toGenes_1 , slot = "counts") %>% as.data.frame()
+  
+  fromGenes_1 = subset(obj1, idents = from1 )
+  fromGExpression_1  = GetAssayData(object = fromGenes_1 , slot = "counts") %>% as.data.frame()
+  
+  
+  toGenes_2 = subset(obj2, idents = to2 )
+  toExpression_2 = GetAssayData(object = toGenes_2, slot = "counts") %>% as.data.frame()
+  
+  fromGenes_2 = subset(obj2, idents = from2 )
+  fromGExpression_2 = GetAssayData(object = fromGenes_2, slot = "counts") %>% as.data.frame()
+  
+  if(!is.null(lr2)){
+    legRet = rbind(lr1,lr2)
   }else{
-    print(unique(unlist(genes_to_use)))
-    return(FindMarkers(obj,ident.1 = id1,ident.2 = id2,only.pos = TRUE,
-                       min.pct = threshold, logfc.threshold = threshold,features = unique(unlist(genes_to_use)),test.use = "MAST"))
+    legRet = lr1
   }
+  
+  ProtNamesInfo = read.csv("files/humanProtinInfo.csv")
+  ProtActions = read.csv("files/humanProtinAction.csv")
+  
+  #Expression_scale = GetAssayData(object = obj1, slot = "scale.data") %>% as.data.frame()
+  #toExpression = GetAssayData(object = pbmc_unite, slot = "counts") %>% as.data.frame()
+  
+  
+  source_python('Codes/pyDictToR.py')
+  lst = main_py_to_R(ProtNamesInfo, ProtActions)
+  source_python('Codes/Tf_Graph.py') 
+  
+  TfDict = lst[[1]]
+  pro_action = lst[[3]]
+  pro_name = lst[[2]]
+  
+  #distDic = hash(py$dist_dickt)
+  
+  
+  DSA_Table_1 = TF_DSA_FUNC_dircted(ProtNamesInfo,ProtActions,toExpression_1,legRet,TfDict,getwd())
+  DSA_Table_2 = TF_DSA_FUNC_dircted(ProtNamesInfo,ProtActions,toExpression_2,legRet,TfDict,getwd())
+  args1 = list(toExpression_1,fromGExpression_1,DSA_Table_1[[1]],legRet)
+  args2 = list(toExpression_2,fromGExpression_2,DSA_Table_2[[1]],legRet)
+  if (!is.null(modle)){
+    lst = DSA_Classfier(args1,args2,modle = modle,plot_name = paste("roc",from1,from2,sep = "_"))
+  }else{
+    lst = DSA_Classfier(args1,args2,return_modle = TRUE,plot_name = paste("roc",from1,from2,sep = "_"))
+  }
+  return (lst)
 }
 
-deCircosPlot = function(obj,fromName, toName,lig,Rec,DSA_Table,de_recptors,pathPlot){
-  print("stop1")
-  markerallL = FindMarkers(obj, ident.1 = fromName,ident.2 = toName,features =lig, only.pos = TRUE,
+draw_flow_graph = function(DSA_graphs,recp){
+  df = DSA_graphs$make_df_flow(recp)
+  g = graph_from_data_frame(df,directed = TRUE)
+  V(g)$color = "#00CCCC"
+  tkplot(g,layout = layout_as_tree(g,recp),edge.label=round(as.numeric(E(g)$flow), 4))
+  
+}
+
+draw_flow_graph_from_df = function(df,root = "t"){
+  g = graph_from_data_frame(df,directed = TRUE)
+  V(g)$color = "#00CCCC"
+  tkplot(g,layout = layout_as_tree(g,root),edge.label=round(as.numeric(E(g)$flow), 4))
+}
+
+deCircosPlot = function(obj,fromName, toName,legRet,DSA_Table,DSA_graph,de_recptors,pathPlot){
+  markerallL = FindMarkers(obj, ident.1 = fromName,ident.2 = toName,features = unlist(legRet["Ligand"]), only.pos = TRUE,
                           min.pct = 0.1, logfc.threshold = 0.1,test.use = "MAST")
-  markerallR = FindMarkers(obj, ident.1 = toName,ident.2 = fromName,features = Rec, only.pos = TRUE,
+  markerallR = FindMarkers(obj, ident.1 = toName,ident.2 = fromName,features = unlist(legRet["Receptor"]), only.pos = TRUE,
                            min.pct = 0.1, logfc.threshold = 0.1,test.use = "MAST")
-  print("stop2")
   
   DE = DElegenedNcolor(obj,fromName,toName,legRet,markerallL,markerallR)
   
@@ -443,25 +483,80 @@ deCircosPlot = function(obj,fromName, toName,lig,Rec,DSA_Table,de_recptors,pathP
   DSAcol_fun = colorRamp2(c(0, (0.5 + abs_maxmean_weight)), c("white", "#28a10a"))
   lgd_DSA = Legend(at = c(0, (DSA_Table$DSA %>% max()/2) %>% round(digits = 2),
                           DSA_Table$DSA %>% max %>% round(digits = 2)),
-                          col_fun = DSAcol_fun, title_position = "leftcenter-rot", title = "DSA",legend_height = unit(2, "cm"))
+                   col_fun = DSAcol_fun, title_position = "leftcenter-rot", title = "DSA",legend_height = unit(2, "cm"))
   
-  createCircosPlots(toExpression,legRet,DE,list(DSAcol_fun,lgd_DSA,DSA_Table),fromName,toName,"de",obj,de_recptors,path = pathPlot) 
+  createCircosPlots(toExpression,legRet,DE,list(DSAcol_fun,lgd_DSA,DSA_Table,DSA_graph),fromName,toName,"de",obj,de_recptors,path = pathPlot) 
 }
 
-DSA_PLOT_TSNE = function(obj,fromName,toName,plot_path = NULL){
- DSAPlot = FeaturePlot(obj,reduction = "tsne", features = c("DSA_SCORE"),pt.size=1.5)  +
-    scale_colour_gradientn(colours = jet.colors(10)) + th
+LigandReceptorPipline = function(obj,fromName, toName,ProtActions,ProtNamesInfo,TfDict,stw,thrshold = 0.1,plot_path = NULL,per_claster = FALSE){
+  setwd(stw)
+  #source_python("Tf_Graph.py") 
+  LigandReceptorTable = read.delim("files/LigandReceptorTableMouse.tsv",sep = "\t", header = T, quote = "" )  
+  #remove overlaps between ligand and receptor
+  LigandReceptorTable = LigandReceptorTable[!LigandReceptorTable$from %in% LigandReceptorTable$to,]
+  LigandReceptorTable = LigandReceptorTable[!LigandReceptorTable$to %in% LigandReceptorTable$from,]
+  
+  LR  = createLRtable(obj,LigandReceptorTable,fromName,toName, "counts",thrshold = thrshold )
+  if (length(LR) == 1){
+    return("ex")
+  }
+  legRet = LR[[1]]
+  markerallL = LR[[2]]
+  markerallR = LR[[3]]
+  #  return(legRet)
+  #saveRDS(legRet,file="legRet.Robj")
+  DE = DElegenedNcolor(obj,fromName,toName,legRet,markerallL,markerallR)
+  
+  DEcol_fun = DE[[1]]
+  lgd_DE = DE[[2]]
+  DE_Data_Sub = DE[[3]]
+  
+  toGenes = subset(obj, idents = toName )
+  toExpression.scale = GetAssayData(object = toGenes, slot = "scale.data") %>% as.data.frame()
+  toExpression = GetAssayData(object = toGenes, slot = "counts") %>% as.data.frame()
+  
+  DSA = DSAlegenedNcolor(TF_DSA_FUNC_dircted, ProtNamesInfo,ProtActions,toExpression,legRet,TfDict,stw)
+  
+  if (length(DSA) == 1){
+    return("ex")
+  }
+  
+  DSAcol_fun = DSA[[1]]
+  lgd_DSA = DSA[[2]]
+  DSA_Table = DSA[[3]]
+  DSA_grpahs  = DSA[[4]]
+  DSA_Table = DSA_Table[DSA_Table$DSA != Inf,]
+  
+  print(plot_path)
   if(is.null(plot_path)){
-    ggsave( plot = DSAPlot, filename =  paste0(fromName,"_",toName,"_","DSAPlot.pdf"),path = paste(sep = "" ,getwd(),"/plotOut"), device = "pdf")
+    createCircosPlots(toExpression,legRet,DE,DSA,fromName,toName,"de",obj)
+  }else{
+    createCircosPlots(toExpression,legRet,DE,DSA,fromName,toName,"de",obj,path = plot_path )
+    
+  }
+
+  ##################3
+  
+  if(per_claster == TRUE ){
+    obj = dsa_score_per_cell_all_cluster(obj,toExpression,DSA_Table)
+    
+    DSAPlot = FeaturePlot(obj, features = c("DSA_SCORE"),pt.size=1.5)  +
+      scale_colour_gradientn(colours = jet.colors(10)) + th
+    
+    
+  }else{
+    obj = dsa_score_per_cell(obj,toExpression,DSA_Table)
+    
+    DSAPlot = FeaturePlot(obj, features = c("DSA_SCORE"),pt.size=1.5)  +
+      scale_colour_gradientn(colours = jet.colors(10)) + th
+    
+  }
+  
+  if(is.null(plot_path)){
+    ggsave( plot = DSAPlot, filename =  paste0(fromName,"_",toName,"_","DSAPlot.pdf")                ,path = paste(sep = "" ,getwd(),"/plotOut"), device = "pdf")
   }else{
     print(paste(sep = "" ,getwd(),plot_path))
-    ggsave( plot = DSAPlot, filename =  paste0(fromName,"_",toName,"_","DSAPlot.pdf"),path = paste(sep = "" ,getwd(),plot_path), device = "pdf")
+    ggsave( plot = DSAPlot, filename =  paste0(fromName,"_",toName,"_","DSAPlot.pdf")               ,path = paste(sep = "" ,getwd(),plot_path), device = "pdf")
   }
-}
-
-draw_flow_graph_from_df = function(df,root = "t"){
-  g = graph_from_data_frame(df,directed = TRUE)
-  V(g)$color = "#00CCCC"
-  tkplot(g,layout = layout_as_tree(g,root),edge.label=round(as.numeric(E(g)$flow), 4))
-  readline("enetr any key to continue...")
+  return(list(legRet,DSA_Table,DSA_grpahs,obj))
 }
