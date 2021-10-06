@@ -1,0 +1,15 @@
+Var,Value
+objTr,PD1Saline.merged.PD1.RDS
+objCo,PD1Saline.merged.Saline.RDS
+toVec,1 4 6 8 10 12
+fromVec,0 2 5 7 9 13
+plotpathTr,/plotOut/PD1
+nameObjTr,PD1_tomer
+plotpathCo,/plotOut/Saline
+nameObjCo,PD1_Saline_tomer
+toVecForDE,1 4 6 8 10 12
+fromVecForDE,0 2 5 7 9 13 
+nameObjCLF,PD1
+DEplotpathT,/plotOut/PD1/DE-DSA
+DEplotpathC,/plotOut/Saline/DE-DSA
+Proj,PD1

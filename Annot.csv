@@ -1,0 +1,15 @@
+Cluster,Type,subType
+0,Monocytes,
+1,T-cells,CD8
+2,Macrophages,
+3,NK cells,
+4,T-cells,CD8
+5,Granulocytes,
+6,T-cells,CD8
+7,Dendritic,cDC1/DC3
+8,T-cells,CD8
+9,Dendritic,cDC2
+10,T regs,
+11,Dendritic,cDC1
+12,T-cells,CD8
+13,Dendritic,pDCs
