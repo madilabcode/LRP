@@ -1,6 +1,11 @@
 import numpy as np
 import pandas as pd
-#import anndata2ri as ri
+# from bounded_pool_executor import BoundedProcessPoolExecutor
+# import anndata2ri as ri
+import os
+
+os.environ["R_HOME"] = r"C:\Program Files\R\R-4.1.1"
+os.environ['path'] += r";C:\Program Files\R\R-4.1.1\bin"
 from rpy2.robjects import r
 from rpy2 import robjects as ro
 from rpy2.robjects.conversion import localconverter
@@ -13,13 +18,14 @@ import rpy2.robjects.pandas2ri as rpyp
 import concurrent.futures
 import pickle
 
+
 def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False):
     print(f"{toName}_{fromName}")
     r["source"]("Codes/Ligand_Receptor_pipeline.R")
     ProtNamesInfo = pd.read_csv("files/humanProtinInfo.csv")
     ProtActions = pd.read_csv("files/humanProtinAction.csv")
     subset = r("subset")
-   
+
     with localconverter(default_converter + rpyp.converter):
         lst = pyd.main_py_to_R(ProtNamesInfo, ProtActions)
         TfDict = lst[0]
@@ -128,20 +134,26 @@ def _helper_LRP(x):
 
 def _helper_Classfier(args):
     return build_or_use_classfier(*args)
- 
 
-def ExpTables(obj, toName, fromName, assay="counts"):
-     with localconverter(default_converter + rpyp.converter):
+
+def ExpTables(obj, toName, fromName, assay="data"):
+    with localconverter(default_converter + rpyp.converter):
         r("library(Seurat)")
         subset = r("subset")
-        GetAssayData = r("GetAssayData")
+        if assay == "data":
+            GetAssayData = r("function(obj) obj[['RNA']]@data %>% as.data.frame()")
+        else:
+            GetAssayData = r(f"function(obj) GetAssayData(obj,{assay}) %>% as.data.frame()")
+
+
+            GetAssayData = r("GetAssayData")
         rDataFrame = r("as.data.frame")
 
         tosub = subset(obj, idents=toName)
         fromsub = subset(obj, idents=fromName)
 
-        toExpression = rDataFrame(GetAssayData(object=tosub, slot=assay))
-        fromExpression = rDataFrame(GetAssayData(object=fromsub, slot=assay))
+        toExpression = GetAssayData(tosub)
+        fromExpression = GetAssayData(fromsub)
 
         return toExpression, fromExpression
 
@@ -153,11 +165,11 @@ def run_pipline(args, objName, max_workers=20):
     DSA_Graphs = tfg.Obj_dict()
     DSA_mean = {}
 
-    #with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
+    # with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-         result = list(executor.map(_helper_LRP, args))
-    
-   # result = list(filter(lambda x: x is not None, result))
+        result = list(executor.map(_helper_LRP, args))
+
+    # result = list(filter(lambda x: x is not None, result))
 
     with localconverter(default_converter + rpyp.converter):
         obj = r(f"readRDS('{args[0][0]}')")
@@ -167,23 +179,23 @@ def run_pipline(args, objName, max_workers=20):
                 DSA_Tables[arg[1]] = {}
                 DSA_Graphs.add_obj(arg[1], tfg.Obj_dict())
                 DSA_mean[arg[1]] = {}
-       
+
             if result[index] is not None:
-              legRetList[arg[1]][arg[2]] = result[index][0]
-              DSA_Tables[arg[1]][arg[2]] = result[index][1]
-              DSA_Graphs.return_GD_from_key(arg[1]).add_obj(arg[2], result[index][2])
-              toExpression, fromExpression = ExpTables(obj, arg[1], arg[2])
-              DSA_mean[arg[1]][arg[2]] = [
-                  np.mean(utils.dsa_with_lig(toExpression, fromExpression, result[index][1], result[index][0]))]
+                legRetList[arg[1]][arg[2]] = result[index][0]
+                DSA_Tables[arg[1]][arg[2]] = result[index][1]
+                DSA_Graphs.return_GD_from_key(arg[1]).add_obj(arg[2], result[index][2])
+                toExpression, fromExpression = ExpTables(obj, arg[1], arg[2])
+                DSA_mean[arg[1]][arg[2]] = [
+                    np.mean(utils.dsa_with_lig(toExpression, fromExpression, result[index][1], result[index][0]))]
 
         DSA_Mean = {key: neo.dict_to_table(value, "Cluster", "DSA_Mean") for key, value in DSA_mean.items()}
         tfg.save_obj(legRetList, f"./outputObj/legRetLists_{objName}")
         tfg.save_obj(DSA_Tables, f"./outputObj/DSA_Tables_{objName}")
         tfg.save_obj(DSA_Graphs, f"./outputObj/DSA_Graphs_{objName}")
         tfg.save_obj(DSA_Mean, f"./outputObj/DSA_mean_{objName}")
-    
-   # print([legRetList, DSA_Tables, DSA_Graphs, DSA_Mean])
-    #del result
+
+    # print([legRetList, DSA_Tables, DSA_Graphs, DSA_Mean])
+    # del result
     r("rm(list = ls())")
     r("gc()")
     return legRetList, DSA_Tables, DSA_Graphs, DSA_Mean
@@ -198,8 +210,9 @@ def deCirces(obj, toName, fromName, legRet, DSA_Table, DSA_Graph, DE_Recp, path,
 
     with localconverter(default_converter + rpyp.converter):
         markerallL = findMarkers_python(obj, fromName, toName, genes_to_use=list(legRet["Ligand"]), threshold=threshold)
-        markerallR = findMarkers_python(obj, toName, fromName, genes_to_use=list(legRet["Receptor"]), threshold=threshold)
-        
+        markerallR = findMarkers_python(obj, toName, fromName, genes_to_use=list(legRet["Receptor"]),
+                                        threshold=threshold)
+
         markerallL["isL"] = list(map(lambda x: x in list(legRet["Ligand"]), markerallL.index))
         markerallR["isR"] = list(map(lambda x: x in list(legRet["Receptor"]), markerallR.index))
 
@@ -240,9 +253,10 @@ def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=20):
                 toExpressionTr, fromExpressionTr = ExpTables(objTr, toName, fromName)
                 toExpressionCo, fromExpressionCo = ExpTables(objCo, toName, fromName)
                 args.append((toExpressionTr, toExpressionCo, fromExpressionTr, fromExpressionCo,
-                             f"plotOut/ROC/RocResult{fromName}_{toName}", lst_Tr[0][toName][fromName], lst_Co[0][toName][fromName]))
+                             f"plotOut/ROC/RocResult{fromName}_{toName}", lst_Tr[0][toName][fromName],
+                             lst_Co[0][toName][fromName]))
 
-   # with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
+    # with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
 
         results = list(executor.map(_helper_Classfier, args))
@@ -257,40 +271,42 @@ def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=20):
         for fromName in fromVec:
             if toName != fromName and len(results) > counter:
                 if len(results[counter]) > 1:
-                    tempUp = pd.DataFrame(results[counter][1])
-                    tempUp["importances value"] = tempUp["importances value"] / tempUp["importances value"].max()
-                    tempUp  = tempUp.loc[tempUp["importances value"] > 0.1]
-                    up[toName][fromName]= tempUp
+                    up[toName][fromName] = pd.DataFrame(results[counter][1])
+                    up[toName][fromName]["importances value"] = up[toName][fromName]["importances value"] / \
+                                                                  up[toName][fromName]["importances value"].max()
+                    up[toName][fromName]["importances value"] = up[toName][fromName]["importances value"].apply(
+                        lambda x: x if x > 0.3 else 0.3)
+
                 if len(results[counter]) > 2:
-                    tempDown = pd.DataFrame(results[counter][2])
-                    tempDown["importances value"] = tempDown["importances value"] / tempDown["importances value"].max()
-                    tempDown  = tempDown.loc[tempDown["importances value"] > 0.1]
-                    down[toName][fromName]= tempDown
+                    down[toName][fromName] = pd.DataFrame(results[counter][2])
+                    down[toName][fromName]["importances value"] = down[toName][fromName]["importances value"] / \
+                                                                  down[toName][fromName]["importances value"].max()
+                    down[toName][fromName]["importances value"] = down[toName][fromName]["importances value"].apply(lambda x: x if x > 0.3 else 0.3)
             counter += 1
 
     tfg.save_obj(up, f"outputObj/up_{name_obj_clf}")
     tfg.save_obj(down, f"outputObj/down_{name_obj_clf}")
 
-    #with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
-    #with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-    
+    # with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
+    # with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+
     for toName in toVec:
         fromVecTemp = utils.intersection(fromVec, down[toName].keys())
         fromVecTemp = utils.intersection(fromVecTemp, up[toName].keys())
         for fromName in fromVecTemp:
-          if fromName != toName:
-            if len(down[toName][fromName].index) > 0:
-                deCirces(objCo, toName, fromName, lst_Co[0][toName][fromName],
-                          lst_Co[1][toName][fromName],
-                          lst_Co[2].return_GD_from_key(toName).return_GD_from_key(fromName),
-                          list(down[toName][fromName]["feture"]), plotpathC)
-                                        
-            if len(up[toName][fromName].index) > 0:
-              #executor.submit
-              deCirces( objTr, toName, fromName, lst_Tr[0][toName][fromName],
-              lst_Tr[1][toName][fromName],
-              lst_Tr[2].return_GD_from_key(toName).return_GD_from_key(fromName),
-              list(up[toName][fromName]["feture"]), plotpathT)
+            if fromName != toName:
+                if len(down[toName][fromName].index) > 0:
+                    deCirces(objCo, toName, fromName, lst_Co[0][toName][fromName],
+                             lst_Co[1][toName][fromName],
+                             lst_Co[2].return_GD_from_key(toName).return_GD_from_key(fromName),
+                             down[toName][fromName], plotpathC)
+
+                if len(up[toName][fromName].index) > 0:
+                    # executor.submit
+                    deCirces(objTr, toName, fromName, lst_Tr[0][toName][fromName],
+                             lst_Tr[1][toName][fromName],
+                             lst_Tr[2].return_GD_from_key(toName).return_GD_from_key(fromName),
+                             up[toName][fromName], plotpathT)
 
     return up, down
 
@@ -316,6 +332,7 @@ def build_or_use_classfier(toExp1, toExp2, fromExp1, fromExp2, RocPlotName,
         print("Stop0")
         return utils.DSA_Classfier(args1, args2, return_modle=False, plot_name=RocPlotName)
     return utils.DSA_Classfier(args1, args2, modle=modle, return_modle=False, plot_name=RocPlotName)
+
 
 def main():
     try:
@@ -367,7 +384,6 @@ def main():
             neo.make_cluster_trat_relationship(graph, toNodeTr, toNodeCo, down[toName])
 
             neo.make_cluster_trat_relationship(graph, toNodeCo, toNodeTr, up[toName])
-        
 
         return lst_Tr, lst_Co
 
@@ -385,19 +401,19 @@ def main():
 
     return lst_Tr
 
+
 def format_dsa_file(x):
     annot = pd.read_csv("Annot.csv")
     try:
-      type_cluster = list(annot.loc[annot['Cluster'] == int(x),'Type'])[0]
-      subtype_cluster = list(annot.loc[annot['Cluster'] == int(x),'subType'])[0]
-    except :
-      raise Exception(f"cluster {x} not found")
-    
+        type_cluster = list(annot.loc[annot['Cluster'] == int(x), 'Type'])[0]
+        subtype_cluster = list(annot.loc[annot['Cluster'] == int(x), 'subType'])[0]
+    except:
+        raise Exception(f"cluster {x} not found")
+
     if subtype_cluster is np.nan:
         return f"{x}/{type_cluster}"
     return f"{x}/{type_cluster}/{subtype_cluster}"
-    
-    
+
 
 def DE_DSA():
     conf = pd.read_csv("config.csv")
@@ -414,13 +430,13 @@ def DE_DSA():
     for key, value in DSA_MeanTr.items():
         value["To Cluster"] = key
         value = value[["Cluster", "To Cluster", "DSA_Mean"]]
-        value.columns =(["From Cluster","To Cluster", "DSA_Mean"])
+        value.columns = (["From Cluster", "To Cluster", "DSA_Mean"])
         DSA_UP = pd.concat([DSA_UP, value])
 
     for key, value in DSA_MeanCo.items():
         value["To Cluster"] = key
         value = value[["Cluster", "To Cluster", "DSA_Mean"]]
-        value.columns = (["From Cluster","To Cluster", "DSA_Mean"])
+        value.columns = (["From Cluster", "To Cluster", "DSA_Mean"])
         DSA_DOWN = pd.concat([DSA_DOWN, value])
 
     DSA_UP["From Cluster"] = DSA_UP["From Cluster"].apply(format_dsa_file)
@@ -433,7 +449,6 @@ def DE_DSA():
     DSA_UP.to_csv(r"./files/DSA_UP.csv")
 
     return DSA_UP, DSA_DOWN
-
 
 
 def test_function():
@@ -466,29 +481,30 @@ def test_function():
     objTr = r(f"objTr = readRDS('InputObj/{pathTret}')")
     objCo = r(f"objCo = readRDS('InputObj/{pathControl}')")
 
-   # toVec = intersection(toVec, lst_Tr[0].keys())
-    #toVec = intersection(toVec, lst_Co[0].keys())
-    #projName = list(conf.loc[conf["Var"] == "Proj", "Value"])[0].split()
-    
+    # toVec = intersection(toVec, lst_Tr[0].keys())
+    # toVec = intersection(toVec, lst_Co[0].keys())
+    # projName = list(conf.loc[conf["Var"] == "Proj", "Value"])[0].split()
+
     for toName in toVec:
         fromVecTemp = utils.intersection(fromVec, lst_Tr[0][toName].keys())
         fromVecTemp = utils.intersection(fromVecTemp, lst_Tr[0][toName].keys())
         for fromName in fromVecTemp:
-          if fromName != toName:
-            if len(down[toName][fromName].index) > 0:
-                deCirces(objCo, toName, fromName, lst_Co[0][toName][fromName],
-                          lst_Co[1][toName][fromName],
-                          lst_Co[2].return_GD_from_key(toName).return_GD_from_key(fromName),
-                          list(down[toName][fromName]["feture"]), plotpathC)
-                                        
-            if len(up[toName][fromName].index) > 0:
-              #executor.submit
-              deCirces( objTr, toName, fromName, lst_Tr[0][toName][fromName],
-              lst_Tr[1][toName][fromName],
-              lst_Tr[2].return_GD_from_key(toName).return_GD_from_key(fromName),
-              list(up[toName][fromName]["feture"]), plotpathT)
-        
+            if fromName != toName:
+                if len(down[toName][fromName].index) > 0:
+                    deCirces(objCo, toName, fromName, lst_Co[0][toName][fromName],
+                             lst_Co[1][toName][fromName],
+                             lst_Co[2].return_GD_from_key(toName).return_GD_from_key(fromName),
+                             list(down[toName][fromName]["feture"]), plotpathC)
+
+                if len(up[toName][fromName].index) > 0:
+                    # executor.submit
+                    deCirces(objTr, toName, fromName, lst_Tr[0][toName][fromName],
+                             lst_Tr[1][toName][fromName],
+                             lst_Tr[2].return_GD_from_key(toName).return_GD_from_key(fromName),
+                             list(up[toName][fromName]["feture"]), plotpathT)
+
+
 if __name__ == "__main__":
-    # print(os.getcwd())
-     main()
-    #test_function()
+    print(os.getcwd())
+    main()
+# test_function()

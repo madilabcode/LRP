@@ -1,12 +1,14 @@
 import numpy as np
 import pandas as pd
+import os
+os.environ["R_HOME"] = r"C:\Program Files\R\R-4.1.1"
+os.environ['path'] += r";C:\Program Files\R\R-4.1.1\bin"
 from rpy2.robjects import r
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects import default_converter
 from Codes import Tf_Graph as tfg
-
 import rpy2.robjects.pandas2ri as rpyp
-
+import concurrent.futures
 
 def tfs_importance(tr=True):
     try:
@@ -22,10 +24,9 @@ def tfs_importance(tr=True):
         graphs = tfg.load_obj(f"outputObj\DSA_Graphs_{name_obj_Tr}")
     else:
         graphs = tfg.load_obj(f"outputObj\DSA_Graphs_{name_obj_Co}")
-
     toCluster = input("To Cluster")
     fromCluster = input("From Cluster")
-    graphObj = graphs.return_GD_from_key(toCluster).return_GD_from_key(fromCluster)
+    graphObj = graphs.return_GD_from_key(toCluster).return_GD_from_key(fromCluster).update_obj()
     df = graphObj.calculate_significant_tf_Multy_sinc()
     df.to_csv(f"./files/{fromCluster}_{toCluster}_{tr}_importance.csv")
 
