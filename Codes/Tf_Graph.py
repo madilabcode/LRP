@@ -2,13 +2,14 @@ import pandas as pd
 import numpy as np
 import math
 from rpy2.robjects import r
-#import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
 import scipy.stats as sc
 import networkx as nx
 import pickle
 from Codes import CERNO as ce
+import concurrent.futures
 
 
 class Obj_dict:
@@ -149,6 +150,18 @@ class graphs_dict:
         tf_effects = tf_effects.sort_values(by="flow_delta", axis=0, ascending=False)
         return tf_effects
 
+    @staticmethod
+    def _calculate_flow_delta_for_df(args):
+        gene, pat, max_flow = args
+        if gene != "s" and gene != "t":
+            pat["isNotTf"] = pat.apply(
+                lambda row: True if str(row["source"]).find(gene) < 0 and str(row["target"]).find(
+                    gene) < 0 else False, axis=1)
+            pat = pat.loc[pat["isNotTf"], :]
+            gpf = nx.from_pandas_edgelist(pat, "source", "target", edge_attr="capacity", create_using=nx.DiGraph())
+            flow_value = nx.maximum_flow(gpf, "s", "t", flow_func=nx.algorithms.flow.dinitz)[0]
+            return gene, max_flow - flow_value
+
     def calculate_significant_tf_Multy_sinc(self, only_tf=True):
         pa = nx.to_pandas_edgelist(self.capcity_network)
         pa.columns = ["source", "target", "capacity"]
@@ -171,18 +184,13 @@ class graphs_dict:
         max_flow = nx.maximum_flow(gpf, "s", "t", flow_func=nx.algorithms.flow.dinitz)[0]
         self.max_multy_flow = max_flow
 
-        for gene in all_genes:
-            print(gene)
-            if gene != "s" and gene != "t":
-                pat = pa.copy()
-                pat["isNotTf"] = pat.apply(
-                    lambda row: True if str(row["source"]).find(gene) < 0 and str(row["target"]).find(
-                        gene) < 0 else False, axis=1)
-                pat = pat.loc[pat["isNotTf"], :]
-                gpf = nx.from_pandas_edgelist(pat, "source", "target", edge_attr="capacity", create_using=nx.DiGraph())
-                flow_value = nx.maximum_flow(gpf, "s", "t", flow_func=nx.algorithms.flow.dinitz)[0]
-                tf_effects["tfs"].append(gene)
-                tf_effects["flow_delta"].append(max_flow - flow_value)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(graphs_dict._calculate_flow_delta_for_df,
+                                        [(gene, pa.copy(), max_flow) for gene in all_genes]))
+
+        for element in results:
+            tf_effects["tfs"].append(element[0])
+            tf_effects["flow_delta"].append(element[1])
 
         tf_effects = pd.DataFrame.from_dict(tf_effects)
         tf_effects = tf_effects.sort_values(by="flow_delta", axis=0, ascending=False)
@@ -233,7 +241,7 @@ class graphs_dict:
         result["notTorS"] = result.apply(lambda row: True if row["source"] != "t" and row["target"] != "s" else False,
                                          axis=1)
         return result.loc[result["notTorS"], ["source", "target", "flow"]]
-        
+
     def calculate_max_flow_for_one_tf(self, tf):
         pa = self.add_t_to_network()
         cols = ["source", "target", "capacity"]
@@ -246,12 +254,11 @@ class graphs_dict:
         result["notTorS"] = result.apply(lambda row: True if row["source"] != "t" and row["target"] != "s" else False,
                                          axis=1)
         return result.loc[result["notTorS"], ["source", "target", "flow"]]
-        
+
     def calculate_p_value_for_recp(self, rec, num_of_perm=1000, fix_rec=True):
         flow_list = []
         stat = nx.maximum_flow(self.capcity_network, "s", rec + "_Source", flow_func=nx.algorithms.flow.dinitz)[0]
         graph = nx.to_pandas_edgelist(self.capcity_network)
-
 
 
 def shortest_path(grpah, node1, node2, upload_name="temp_grpah"):
@@ -450,9 +457,9 @@ def build_active_network(ProtAction, ProtInfo, exp):
     return gp
 
 
-def DSA_anaylsis(exp, recptors, ProtAction, ProtInfo, tfs, use_location_capacity=False):
-    #tfs_scores = hiper_test_tfs(exp, tfs)
-    tfs_scores = ce.CERNO_alg(exp.apply(np.sum, axis=1),tfs)
+def DSA_anaylsis(exp, recptors, ProtAction, ProtInfo, tfs, use_location_capacity=False, scale_factor = 100):
+    # tfs_scores = hiper_test_tfs(exp, tfs)
+    tfs_scores = ce.CERNO_alg(exp.apply(np.sum, axis=1), tfs)
     gpf = bulild_flowing_network_tf(ProtAction, ProtInfo, tfs_scores, exp)
     flow_values = []
     flow_dicts = {}
@@ -467,6 +474,7 @@ def DSA_anaylsis(exp, recptors, ProtAction, ProtInfo, tfs, use_location_capacity
             print("node " + rec + " is not in the graph")
 
     df = pd.DataFrame(list(map(lambda val: val[1], flow_values)), columns=["DSA"])
+    #df.DSA = df.DSA * scale_factor
     df.index = list(map(lambda val: val[0], flow_values))
     df["Recp"] = df.index
     gd = graphs_dict(flow_dicts, gpf)
