@@ -19,17 +19,17 @@ import concurrent.futures
 import pickle
 
 
-def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False):
-    print(f"{toName}_{fromName}")
-    r["source"]("Codes/Ligand_Receptor_pipeline.R")
-    ProtNamesInfo = pd.read_csv("files/humanProtinInfo.csv")
-    ProtActions = pd.read_csv("files/humanProtinAction.csv")
-    subset = r("subset")
-
+def LRP(obj, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False):
     with localconverter(default_converter + rpyp.converter):
+
+        print(f"{toName}_{fromName}")
+        r["source"]("Codes/Ligand_Receptor_pipeline.R")
+        ProtNamesInfo = pd.read_csv("files/humanProtinInfo.csv")
+        ProtActions = pd.read_csv("files/humanProtinAction.csv")
+        subset = r("subset")
+
         lst = pyd.main_py_to_R(ProtNamesInfo, ProtActions)
         TfDict = lst[0]
-        obj = r(f"readRDS('{path}')")
         createLRtable = r("createLRtable")
         DElegenedNcolor = r("DElegenedNcolor")
 
@@ -140,18 +140,9 @@ def ExpTables(obj, toName, fromName, assay="data"):
     with localconverter(default_converter + rpyp.converter):
         r("library(Seurat)")
         subset = r("subset")
-        if assay == "data":
-            GetAssayData = r("function(obj) obj[['RNA']]@data %>% as.data.frame()")
-        else:
-            GetAssayData = r(f"function(obj) GetAssayData(obj,{assay}) %>% as.data.frame()")
-
-
-            GetAssayData = r("GetAssayData")
-        rDataFrame = r("as.data.frame")
-
+        GetAssayData = r(f"function(obj) obj[['RNA']]@{assay} %>% as.data.frame()")
         tosub = subset(obj, idents=toName)
         fromsub = subset(obj, idents=fromName)
-
         toExpression = GetAssayData(tosub)
         fromExpression = GetAssayData(fromsub)
 
@@ -273,7 +264,7 @@ def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=20):
                 if len(results[counter]) > 1:
                     up[toName][fromName] = pd.DataFrame(results[counter][1])
                     up[toName][fromName]["importances value"] = up[toName][fromName]["importances value"] / \
-                                                                  up[toName][fromName]["importances value"].max()
+                                                                up[toName][fromName]["importances value"].max()
                     up[toName][fromName]["importances value"] = up[toName][fromName]["importances value"].apply(
                         lambda x: x if x > 0.3 else 0.3)
 
@@ -281,7 +272,8 @@ def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=20):
                     down[toName][fromName] = pd.DataFrame(results[counter][2])
                     down[toName][fromName]["importances value"] = down[toName][fromName]["importances value"] / \
                                                                   down[toName][fromName]["importances value"].max()
-                    down[toName][fromName]["importances value"] = down[toName][fromName]["importances value"].apply(lambda x: x if x > 0.3 else 0.3)
+                    down[toName][fromName]["importances value"] = down[toName][fromName]["importances value"].apply(
+                        lambda x: x if x > 0.3 else 0.3)
             counter += 1
 
     tfg.save_obj(up, f"outputObj/up_{name_obj_clf}")
@@ -342,6 +334,9 @@ def main():
 
     pathTret = list(conf.loc[conf["Var"] == "objTr", "Value"])[0]
     pathControl = list(conf.loc[conf["Var"] == "objCo", "Value"])[0]
+    objTr = r(f"objTr = readRDS('InputObj/{pathTret}')")
+    objCo = r(f"objCo = readRDS('InputObj/{pathControl}')")
+    objTr, objCo = utils.shift_dist_of_object(objTr, objCo)
 
     if type(pathControl) == float and np.isnan(pathControl):
         flag = False
@@ -351,14 +346,14 @@ def main():
     plotpath = list(conf.loc[conf["Var"] == "plotpathTr", "Value"])[0]
     toVec = list(conf.loc[conf["Var"] == "toVec", "Value"])[0].split(" ")
     fromVec = list(conf.loc[conf["Var"] == "fromVec", "Value"])[0].split(" ")
-    args = [(f"InputObj/{pathTret}", toName, fromName, plotpath) for toName in toVec for fromName in fromVec if
+    args = [(objTr, toName, fromName, plotpath) for toName in toVec for fromName in fromVec if
             fromName != toName]
 
     name_obj_Tr = list(conf.loc[conf["Var"] == "nameObjTr", "Value"])[0]
     lst_Tr = run_pipline(args, name_obj_Tr)
     if flag:
         plotpath = list(conf.loc[conf["Var"] == "plotpathCo", "Value"])[0]
-        args = [(f"InputObj/{pathControl}", toName, fromName, plotpath) for toName in toVec for fromName in fromVec if
+        args = [(objCo, toName, fromName, plotpath) for toName in toVec for fromName in fromVec if
                 fromName != toName]
 
         name_obj_Co = list(conf.loc[conf["Var"] == "nameObjCo", "Value"])[0]
@@ -452,9 +447,12 @@ def DE_DSA():
 
 
 def test_function():
+    r["source"]("Codes/Ligand_Receptor_pipeline.R")
     conf = pd.read_csv(("config.csv"))
     pathTret = list(conf.loc[conf["Var"] == "objTr", "Value"])[0]
     pathControl = list(conf.loc[conf["Var"] == "objCo", "Value"])[0]
+    objTr = r(f"objTr = readRDS('InputObj/{pathTret}')")
+    objCo = r(f"objCo = readRDS('InputObj/{pathControl}')")
     toVec = list(conf.loc[conf["Var"] == "toVec", "Value"])[0].split(" ")
     fromVec = list(conf.loc[conf["Var"] == "fromVec", "Value"])[0].split(" ")
     name_obj_Tr = list(conf.loc[conf["Var"] == "nameObjTr", "Value"])[0]
