@@ -1,9 +1,6 @@
 import numpy as np
 import pandas as pd
-# from bounded_pool_executor import BoundedProcessPoolExecutor
-# import anndata2ri as ri
 import os
-
 os.environ["R_HOME"] = r"C:\Program Files\R\R-4.1.1"
 os.environ['path'] += r";C:\Program Files\R\R-4.1.1\bin"
 from rpy2.robjects import r
@@ -18,6 +15,7 @@ import rpy2.robjects.pandas2ri as rpyp
 import concurrent.futures
 import pickle
 
+assay = "data"
 
 def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False):
     print(f"{toName}_{fromName}")
@@ -37,7 +35,7 @@ def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False)
         r("gc()")
         toExpression, fromExpression = ExpTables(obj, toName, fromName)
         try:
-            LR = createLRtable(obj, toExpression, fromExpression, fromName, toName, 'counts', thrshold=thrshold)
+            LR = createLRtable(obj, toExpression, fromExpression, fromName, toName, assay, thrshold=thrshold)
         except Exception as e:
             LR = None
             print(e)
@@ -136,34 +134,26 @@ def _helper_Classfier(args):
     return build_or_use_classfier(*args)
 
 
-def ExpTables(obj, toName, fromName, assay="data"):
+def ExpTables(obj, toName, fromName, assay=assay):
     with localconverter(default_converter + rpyp.converter):
         r("library(Seurat)")
         subset = r("subset")
-        if assay == "data":
-            GetAssayData = r("function(obj) obj[['RNA']]@data %>% as.data.frame()")
-        else:
-            GetAssayData = r(f"function(obj) GetAssayData(obj,{assay}) %>% as.data.frame()")
-
-
-            GetAssayData = r("GetAssayData")
-        rDataFrame = r("as.data.frame")
-
+        GetAssayData = r(f"function(obj) obj[['RNA']]@{assay} %>% as.data.frame()")
         tosub = subset(obj, idents=toName)
         fromsub = subset(obj, idents=fromName)
-
         toExpression = GetAssayData(tosub)
         fromExpression = GetAssayData(fromsub)
 
         return toExpression, fromExpression
 
 
-def run_pipline(args, objName, max_workers=20):
+
+def run_pipline(args, objName, max_workers=1):
     r["source"]("Codes/Ligand_Receptor_pipeline.R")
     legRetList = {}
     DSA_Tables = {}
     DSA_Graphs = tfg.Obj_dict()
-    DSA_mean = {}
+    DSA_mean = {} 
 
     # with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -229,7 +219,7 @@ def deCirces(obj, toName, fromName, legRet, DSA_Table, DSA_Graph, DE_Recp, path,
                               DE_Recp, path=path)
 
 
-def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=20):
+def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=1):
     r["source"]("Codes/Ligand_Receptor_pipeline.R")
     toVec = list(conf.loc[conf["Var"] == "toVecForDE", "Value"])[0].split()
     fromVec = list(conf.loc[conf["Var"] == "fromVecForDE", "Value"])[0].split()
