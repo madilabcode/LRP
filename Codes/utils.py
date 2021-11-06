@@ -5,10 +5,16 @@ import math
 import scipy.stats as st
 from Codes import randomForstSIngleClassfier as rf
 import zlib, json, base64
+from rpy2.robjects import r
+from rpy2 import robjects as ro
+from rpy2.robjects.conversion import localconverter
+from rpy2.robjects import default_converter
+import rpy2.robjects.pandas2ri as rpyp
 
 
 def intersection(lst1, lst2):
     return [value for value in lst1 if value in lst2]
+
 
 def align_clusters(orig, active1, active2, name1, name2, format1=None, format2=None):
     format1 = dict(format1)
@@ -160,6 +166,22 @@ def DSA_Classfier(args1, args2, modle=None, return_modle=False, plot_name="resul
     return dsa_table, ls[0], ls[1]
 
 
+def shift_dist_of_object(obj_tr, obj_co, assay="scale.data"):
+    with localconverter(default_converter + rpyp.converter):
+        r("library(Seurat)")
+        r("library(dplyr)")
+        GetAssayData = r(f"function(obj) obj[['RNA']]@{assay} %>% as.data.frame()")
+        shift_exp = r("""function(obj,exp){ obj[['RNA']]@scale.data =  as.matrix(exp)
+         return(obj)}""")
+        exp_tr, exp_co = GetAssayData(obj_tr), GetAssayData(obj_co)
+        min_value_tr = exp_tr.apply(min, axis=1).min()
+        min_value_co = exp_co.apply(min, axis=1).min()
+        min_value = min(min_value_tr, min_value_co)
+        exp_tr += np.abs(min_value)
+        exp_co += np.abs(min_value)
+        return shift_exp(obj_tr, exp_tr), shift_exp(obj_co, exp_co)
+
+
 def save_to_csv(table, name):
     table.to_csv(name)
 
@@ -187,4 +209,3 @@ def json_unzip(zp, ZIPJSON_KEY='base64(zip(o))'):
     except:
         raise RuntimeError("Could interpret the unzipped contents")
     return js
-
