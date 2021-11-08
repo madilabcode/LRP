@@ -412,7 +412,6 @@ dsa_score_mean_per_cluster = function(obj,to,from,legRet,DSA_Table, sacle_factor
   return(mean(dsa_with_lig(toExpression,fromGExpression,DSA_Table,legRet)))
 }
 
-
 findMarkers_python = function(obj,id1, id2, genes_to_use = NULL, threshold=0.1){
   if (is.null(genes_to_use)){
       return(FindMarkers(obj,ident.1 = id1,ident.2 = id2,only.pos = TRUE,

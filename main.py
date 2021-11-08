@@ -17,7 +17,7 @@ import pickle
 
 assay = "data"
 
-def LRP(obj, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False):
+def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False):
     with localconverter(default_converter + rpyp.converter):
 
         print(f"{toName}_{fromName}")
@@ -30,7 +30,8 @@ def LRP(obj, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False):
         TfDict = lst[0]
         createLRtable = r("createLRtable")
         DElegenedNcolor = r("DElegenedNcolor")
-
+        readRDS = r("readRDS")
+        obj = readRDS(f"InputObj/{path}")
         obj = subset(obj, ident=[toName, fromName])
         r("gc()")
         toExpression, fromExpression = ExpTables(obj, toName, fromName)
@@ -160,9 +161,8 @@ def run_pipline(args, objName, max_workers=1):
         result = list(executor.map(_helper_LRP, args))
 
     # result = list(filter(lambda x: x is not None, result))
-
     with localconverter(default_converter + rpyp.converter):
-        obj = r(f"readRDS('{args[0][0]}')")
+        obj = r(f"readRDS('InputObj/{args[0][0]}')")
         for index, arg in enumerate(args):
             if arg[1] not in legRetList:
                 legRetList[arg[1]] = {}
@@ -290,14 +290,14 @@ def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=1):
                     deCirces(objCo, toName, fromName, lst_Co[0][toName][fromName],
                              lst_Co[1][toName][fromName],
                              lst_Co[2].return_GD_from_key(toName).return_GD_from_key(fromName),
-                             down[toName][fromName], plotpathC)
+                             list(down[toName][fromName]["feture"]), plotpathC)
 
                 if len(up[toName][fromName].index) > 0:
                     # executor.submit
                     deCirces(objTr, toName, fromName, lst_Tr[0][toName][fromName],
                              lst_Tr[1][toName][fromName],
                              lst_Tr[2].return_GD_from_key(toName).return_GD_from_key(fromName),
-                             up[toName][fromName], plotpathT)
+                             list(up[toName][fromName]["feture"]), plotpathT)
 
     return up, down
 
@@ -320,7 +320,6 @@ def build_or_use_classfier(toExp1, toExp2, fromExp1, fromExp2, RocPlotName,
     args2 = [toExp2, fromExp2, DSA_Table_2[0], legRet]
 
     if modle is None:
-        print("Stop0")
         return utils.DSA_Classfier(args1, args2, return_modle=False, plot_name=RocPlotName)
     return utils.DSA_Classfier(args1, args2, modle=modle, return_modle=False, plot_name=RocPlotName)
 
@@ -333,9 +332,6 @@ def main():
 
     pathTret = list(conf.loc[conf["Var"] == "objTr", "Value"])[0]
     pathControl = list(conf.loc[conf["Var"] == "objCo", "Value"])[0]
-    objTr = r(f"objTr = readRDS('InputObj/{pathTret}')")
-    objCo = r(f"objCo = readRDS('InputObj/{pathControl}')")
-    objTr, objCo = utils.shift_dist_of_object(objTr, objCo)
 
     if type(pathControl) == float and np.isnan(pathControl):
         flag = False
@@ -345,14 +341,14 @@ def main():
     plotpath = list(conf.loc[conf["Var"] == "plotpathTr", "Value"])[0]
     toVec = list(conf.loc[conf["Var"] == "toVec", "Value"])[0].split(" ")
     fromVec = list(conf.loc[conf["Var"] == "fromVec", "Value"])[0].split(" ")
-    args = [(objTr, toName, fromName, plotpath) for toName in toVec for fromName in fromVec if
+    args = [(pathTret, toName, fromName, plotpath) for toName in toVec for fromName in fromVec if
             fromName != toName]
 
     name_obj_Tr = list(conf.loc[conf["Var"] == "nameObjTr", "Value"])[0]
     lst_Tr = run_pipline(args, name_obj_Tr)
     if flag:
         plotpath = list(conf.loc[conf["Var"] == "plotpathCo", "Value"])[0]
-        args = [(objCo, toName, fromName, plotpath) for toName in toVec for fromName in fromVec if
+        args = [(pathControl, toName, fromName, plotpath) for toName in toVec for fromName in fromVec if
                 fromName != toName]
 
         name_obj_Co = list(conf.loc[conf["Var"] == "nameObjCo", "Value"])[0]
@@ -444,6 +440,37 @@ def DE_DSA():
 
     return DSA_UP, DSA_DOWN
 
+def test_DE_Intercations():
+    r["source"]("Codes/Ligand_Receptor_pipeline.R")
+    conf = pd.read_csv(("config.csv"))
+    pathTret = list(conf.loc[conf["Var"] == "objTr", "Value"])[0]
+    pathControl = list(conf.loc[conf["Var"] == "objCo", "Value"])[0]
+    objTr = r(f"objTr = readRDS('InputObj/{pathTret}')")
+    objCo = r(f"objCo = readRDS('InputObj/{pathControl}')")
+    toVec = list(conf.loc[conf["Var"] == "toVec", "Value"])[0].split(" ")
+    fromVec = list(conf.loc[conf["Var"] == "fromVec", "Value"])[0].split(" ")
+    name_obj_Tr = list(conf.loc[conf["Var"] == "nameObjTr", "Value"])[0]
+    name_obj_Co = list(conf.loc[conf["Var"] == "nameObjCo", "Value"])[0]
+    name_obj_clf = list(conf.loc[conf["Var"] == "nameObjCLF", "Value"])[0]
+    plotpathT = list(conf.loc[conf["Var"] == "DEplotpathT", "Value"])[0]
+    plotpathC = list(conf.loc[conf["Var"] == "DEplotpathC", "Value"])[0]
+
+    legRetListTr = tfg.load_obj(f"outputObj/legRetLists_{name_obj_Tr}")
+    DSA_TablesTr = tfg.load_obj(f"outputObj/DSA_Tables_{name_obj_Tr}")
+    DSA_GraphsTr = tfg.load_obj(f"outputObj/DSA_Graphs_{name_obj_Tr}")
+    DSA_MeanTr = tfg.load_obj(f"outputObj/DSA_mean_{name_obj_Tr}")
+    lst_Tr = (legRetListTr, DSA_TablesTr, DSA_GraphsTr, DSA_MeanTr)
+
+    legRetListCo = tfg.load_obj(f"outputObj/legRetLists_{name_obj_Co}")
+    DSA_TablesCo = tfg.load_obj(f"outputObj/DSA_Tables_{name_obj_Co}")
+    DSA_GraphsCo = tfg.load_obj(f"outputObj/DSA_Graphs_{name_obj_Co}")
+    DSA_MeanCo = tfg.load_obj(f"outputObj/DSA_mean_{name_obj_Co}")
+    lst_Co = (legRetListCo, DSA_TablesCo, DSA_GraphsCo, DSA_MeanCo)
+
+    up = tfg.load_obj(f"outputObj/up_{name_obj_clf}")
+    down = tfg.load_obj(f"outputObj/up_{name_obj_clf}")
+    up, down = RUN_DE_LR(conf, lst_Tr, lst_Co, f"InputObj/{pathTret}", f"InputObj/{pathControl}")
+
 
 def test_function():
     r["source"]("Codes/Ligand_Receptor_pipeline.R")
@@ -473,7 +500,7 @@ def test_function():
     lst_Co = (legRetListCo, DSA_TablesCo, DSA_GraphsCo, DSA_MeanCo)
 
     up = tfg.load_obj(f"outputObj/up_{name_obj_clf}")
-    down = tfg.load_obj(f"outputObj/up_{name_obj_clf}")
+    down = tfg.load_obj(f"outputObj/down_{name_obj_clf}")
 
     objTr = r(f"objTr = readRDS('InputObj/{pathTret}')")
     objCo = r(f"objCo = readRDS('InputObj/{pathControl}')")
@@ -504,4 +531,5 @@ def test_function():
 if __name__ == "__main__":
     print(os.getcwd())
     main()
-# test_function()
+   # test_DE_Intercations()
+    #test_function()

@@ -36,7 +36,6 @@ def random_forst_expresstion(exp , plot_name = "result", returnModle = False):
     imp2_stats = list()
     imp1_imp = list()
     imp2_imp = list()
-    print("Stop-1")
     for i in range(10):
         test_sub = new_exp[i * size:min((i + 1) * size, len(new_exp))]
         traning_sub = new_exp.drop(axis=0, labels=[j for j in range(i * size, min((i + 1) * size, len(new_exp)))])
@@ -48,13 +47,10 @@ def random_forst_expresstion(exp , plot_name = "result", returnModle = False):
         pred_list.append(clf.predict(test_sub.drop(axis=1, labels="ident")))
         prob_list.append(clf.predict_proba(test_sub.drop(axis=1, labels="ident")))
         target_list.append(test_sub["ident"])
-    print("Stop1")    
     index = print_output_of_random_forst(target_list, pred_list)
-    roc_test(prob_list, target_list,plot_name)
-    print("Stop2")    
+    roc_test(prob_list, target_list,plot_name)   
     clf = clf_save[index]
     imp = clf.feature_importances_
-    print("Stop3")    
     for index, col in enumerate(new_exp.drop(axis=1, labels="ident").columns):
         feture_import[imp[index]] = col
 
@@ -62,7 +58,6 @@ def random_forst_expresstion(exp , plot_name = "result", returnModle = False):
         imp_sort.append(key)
 
     imp_sort.sort(reverse=True)
-      
    
     for key in imp_sort:
       feture = feture_import[key]
@@ -78,7 +73,7 @@ def random_forst_expresstion(exp , plot_name = "result", returnModle = False):
          imp2_feture.append(feture)
          imp2_imp.append(key)
          imp2_stats.append(s1)
-    print("Stop4")    
+
     imp_feture_up = {"feture":imp1_feture,"importances value": imp1_imp ,"P_value":imp1_pval, "statstic": imp1_stats}
     #imp_feture_up = pd.DataFrame(dict1)
     imp_feture_down = {"feture":imp2_feture,"importances value": imp2_imp,"P_value":imp2_pval, "statstic": imp2_stats}
