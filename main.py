@@ -15,71 +15,58 @@ import rpy2.robjects.pandas2ri as rpyp
 import concurrent.futures
 import pickle
 
+pd.options.mode.chained_assignment = None  # default='warn'
+
 assay = "data"
 
 def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False):
     with localconverter(default_converter + rpyp.converter):
-
         print(f"{toName}_{fromName}")
         r["source"]("Codes/Ligand_Receptor_pipeline.R")
-        ProtNamesInfo = pd.read_csv("files/humanProtinInfo.csv")
-        ProtActions = pd.read_csv("files/humanProtinAction.csv")
+        createLRtable = r("createLRtable")
+        createCircosPlots = r("createCircosPlots")
+        DElegenedNcolor = r("DElegenedNcolor")
+        DSAlegenedNcolor = r("DSAlegenedNcolor")
+        DSA_PLOT_TSNE = r("DSA_PLOT_TSNE")
+        readRDS = r("readRDS")
         subset = r("subset")
 
-        lst = pyd.main_py_to_R(ProtNamesInfo, ProtActions)
-        TfDict = lst[0]
-        createLRtable = r("createLRtable")
-        DElegenedNcolor = r("DElegenedNcolor")
-        readRDS = r("readRDS")
+        ProtNamesInfo = pd.read_csv("files/humanProtinInfo.csv")
+        ProtActions = pd.read_csv("files/humanProtinAction.csv")
+        TfDict = pyd.main_py_to_R(ProtNamesInfo, ProtActions)[0]
+      
         obj = readRDS(f"InputObj/{path}")
         obj = subset(obj, ident=[toName, fromName])
-        r("gc()")
         toExpression, fromExpression = ExpTables(obj, toName, fromName)
-        try:
-            LR = createLRtable(obj, toExpression, fromExpression, fromName, toName, assay, thrshold=thrshold)
-        except Exception as e:
-            LR = None
-            print(e)
-
-        if len(LR) != 3:
-            del obj
+      
+        lr = createLRtable(obj, toExpression, fromExpression, fromName, toName, assay, thrshold=thrshold)
+        if len(lr) != 3:
             return None
 
-        DE = DElegenedNcolor(obj, fromName, toName, LR[0], LR[1], LR[2])
-
+        legRet, markerallL, markerallR = lr  
+        DE = DElegenedNcolor(obj, fromName, toName, legRet, markerallL, markerallR )
+       
         if len(DE) == 0:
-            del obj
             return None
 
-        legRet = LR[0]
         DSA_lst = tfg.DSA_anaylsis(toExpression, legRet["Receptor"], ProtActions, ProtNamesInfo, tfs=TfDict)
 
         if len(DSA_lst) == 0:
-            del obj
             return None
 
-        DSAlegenedNcolor = r("DSAlegenedNcolor")
         DSA = DSAlegenedNcolor(DSA_lst[0])
-
+        sang_recp = [rec for rec,pvalue in DSA_lst[1].perm_p_values.items() if pvalue <= 0.05]
         DSA_Table = DSA[2]
         DSA_Table = DSA_Table.loc[DSA_Table["DSA"] < np.inf, :]
+        obj = dsa_score_per_cell(obj, toExpression, DSA_Table)
 
-        createCircosPlots = r("createCircosPlots")
         if plot_path is None:
             createCircosPlots(toExpression, legRet, DE, ro.ListVector(DSA_lst[1].Tfs_Per_Recp_in_max_flow()), DSA,
-                              fromName, toName, 'r', obj)
+                              fromName, toName, 'r', obj,de_recptors=sang_recp)
         else:
             createCircosPlots(toExpression, legRet, DE, ro.ListVector(DSA_lst[1].Tfs_Per_Recp_in_max_flow()), DSA,
-                              fromName, toName, 'r', obj, path=plot_path)
+                              fromName, toName, 'r', obj,de_recptors=sang_recp, path=plot_path)
 
-        DSA_PLOT_TSNE = r("DSA_PLOT_TSNE")
-
-        if per_claster:
-            dsa_score_per_cell_all_cluster = r("dsa_score_per_cell_all_cluster")
-            obj = dsa_score_per_cell_all_cluster(obj, toExpression, DSA_Table)
-
-        else:
-            obj = dsa_score_per_cell(obj, toExpression, DSA_Table)
 
         if plot_path is not None:
             DSA_PLOT_TSNE(obj, fromName, toName, plot_path)
@@ -148,7 +135,6 @@ def ExpTables(obj, toName, fromName, assay=assay):
         return toExpression, fromExpression
 
 
-
 def run_pipline(args, objName, max_workers=1):
     r["source"]("Codes/Ligand_Receptor_pipeline.R")
     legRetList = {}
@@ -156,11 +142,9 @@ def run_pipline(args, objName, max_workers=1):
     DSA_Graphs = tfg.Obj_dict()
     DSA_mean = {} 
 
-    # with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         result = list(executor.map(_helper_LRP, args))
 
-    # result = list(filter(lambda x: x is not None, result))
     with localconverter(default_converter + rpyp.converter):
         obj = r(f"readRDS('InputObj/{args[0][0]}')")
         for index, arg in enumerate(args):
@@ -179,10 +163,10 @@ def run_pipline(args, objName, max_workers=1):
                     np.mean(utils.dsa_with_lig(toExpression, fromExpression, result[index][1], result[index][0]))]
 
         DSA_Mean = {key: neo.dict_to_table(value, "Cluster", "DSA_Mean") for key, value in DSA_mean.items()}
-        tfg.save_obj(legRetList, f"./outputObj/legRetLists_{objName}")
-        tfg.save_obj(DSA_Tables, f"./outputObj/DSA_Tables_{objName}")
-        tfg.save_obj(DSA_Graphs, f"./outputObj/DSA_Graphs_{objName}")
-        tfg.save_obj(DSA_Mean, f"./outputObj/DSA_mean_{objName}")
+        utils.save_obj(legRetList, f"./outputObj/legRetLists_{objName}")
+        utils.save_obj(DSA_Tables, f"./outputObj/DSA_Tables_{objName}")
+        utils.save_obj(DSA_Graphs, f"./outputObj/DSA_Graphs_{objName}")
+        utils.save_obj(DSA_Mean, f"./outputObj/DSA_mean_{objName}")
 
     # print([legRetList, DSA_Tables, DSA_Graphs, DSA_Mean])
     # del result
@@ -275,8 +259,8 @@ def RUN_DE_LR(conf, lst_Tr, lst_Co, pathTr, pathCo, max_workers=1):
                         lambda x: x if x > 0.3 else 0.3)
             counter += 1
 
-    tfg.save_obj(up, f"outputObj/up_{name_obj_clf}")
-    tfg.save_obj(down, f"outputObj/down_{name_obj_clf}")
+    utils.save_obj(up, f"outputObj/up_{name_obj_clf}")
+    utils.save_obj(down, f"outputObj/down_{name_obj_clf}")
 
     # with BoundedProcessPoolExecutor(max_workers=max_workers) as executor:
     # with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -332,7 +316,7 @@ def main():
 
     pathTret = list(conf.loc[conf["Var"] == "objTr", "Value"])[0]
     pathControl = list(conf.loc[conf["Var"] == "objCo", "Value"])[0]
-
+    utils.normalize_scale_exp(pathTret,pathControl)
     if type(pathControl) == float and np.isnan(pathControl):
         flag = False
     else:
@@ -440,6 +424,7 @@ def DE_DSA():
 
     return DSA_UP, DSA_DOWN
 
+
 def test_DE_Intercations():
     r["source"]("Codes/Ligand_Receptor_pipeline.R")
     conf = pd.read_csv(("config.csv"))
@@ -528,8 +513,34 @@ def test_function():
                              list(up[toName][fromName]["feture"]), plotpathT)
 
 
+def test_normaliztion():
+
+    conf = pd.read_csv("config.csv")
+
+    pathTret = list(conf.loc[conf["Var"] == "objTr", "Value"])[0]
+    pathControl = list(conf.loc[conf["Var"] == "objCo", "Value"])[0]
+
+    with localconverter(default_converter + rpyp.converter):
+        r("library(Seurat)")
+        readRDS = r("readRDS")
+        GetAssayData = r(f"function(obj) as.data.frame(obj[['RNA']]@{assay})")
+        GetObjIdent = r("function(obj) as.character(obj@active.ident)")
+        t1,t2 =  utils.normalize_scale_exp(pathTret,pathControl)
+
+
+
+
+
+def test_permutations():
+    conf = pd.read_csv("config.csv")
+    name_obj_Tr = list(conf.loc[conf["Var"] == "nameObjTr", "Value"])[0]
+    DSA_GraphsTr = tfg.load_obj(f"outputObj/DSA_Graphs_{name_obj_Tr}")
+    obj = DSA_GraphsTr.return_GD_from_key("1").return_GD_from_key("7").update_obj()
+    obj.perm_test_for_all_recptors()
+
+
 if __name__ == "__main__":
     print(os.getcwd())
-    main()
-   # test_DE_Intercations()
-    #test_function()
+    #test_permutations()
+    #main()
+    test_normaliztion()

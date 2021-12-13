@@ -1,7 +1,8 @@
+from networkx.testing.test import run
 import pandas as pd
 import numpy as np
 import math
-from rpy2.robjects import r
+from rpy2.robjects import NULL, r
 # import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
@@ -9,9 +10,12 @@ import scipy.stats as sc
 import networkx as nx
 import pickle
 from Codes import CERNO as ce
+from Codes import utils as utils
+from Codes import pyDictToR as pyd
 import concurrent.futures
 
-CUTOFF = 0.1
+CUTOFF = 0.3
+PA = pd.read_csv("./files/humanProtinAction.csv")
 class Obj_dict:
     def __init__(self):
         self.dic = {}
@@ -23,7 +27,7 @@ class Obj_dict:
         return self.dic[key]
 
     def save_obj(self, name):
-        save_obj(self, name)
+        utils.save_obj(self, name)
 
 
 class graphs_dict:
@@ -32,6 +36,15 @@ class graphs_dict:
         self.capcity_network = capcity_network
         self.max_flow_dict = self.calculate_max_flow_for_all_recp()
         self.max_multy_flow = None
+      #  self.perm_p_values =  self.perm_test_for_all_recptors()
+        self.pa = PA
+        self.pa["Source"] = self.pa["Input-node Gene Symbol"]
+        self.pa["Target"] = self.pa["Output-node Gene Symbol"]
+        self.pa["capacity"] = self.pa["Edge direction score"]
+        keeps = ["Source", "Target", "capacity"]
+        self.pa["Source"] =self.pa["Source"].apply(pyd.format_Gene_dict)
+        self.pa["Target"] =self.pa["Target"].apply(pyd.format_Gene_dict)
+        self.pa = self.pa[keeps]
 
     def sub_capcity_gaph_to_dict(self):
         sub = nx.to_pandas_edgelist(self.capcity_network)
@@ -153,98 +166,118 @@ class graphs_dict:
     @staticmethod
     def _calculate_flow_delta_for_df(args):
         gene, pat, max_flow = args
-        if gene != "s" and gene != "t":
+        if gene != "source_node" and gene != "sink":
             pat["isNotTf"] = pat.apply(
-                lambda row: True if str(row["source"]).find(gene) < 0 and str(row["target"]).find(
-                    gene) < 0 else False, axis=1)
+                lambda row: True if row["source"] != gene  and row["target"] != gene else False, axis=1)
             pat = pat.loc[pat["isNotTf"], :]
             gpf = nx.from_pandas_edgelist(pat, "source", "target", edge_attr="capacity", create_using=nx.DiGraph())
-            flow_value = nx.maximum_flow(gpf, "s", "t", flow_func=nx.algorithms.flow.dinitz)[0]
+            flow_value = nx.maximum_flow(gpf, "source", "target", flow_func=nx.algorithms.flow.dinitz)[0]
             return gene, max_flow - flow_value
 
-    def calculate_significant_tf_Multy_sinc(self, only_tf=True):
+    def run_multiy_source_flow(self):
         pa = nx.to_pandas_edgelist(self.capcity_network)
         pa.columns = ["source", "target", "capacity"]
         tf_effects = {"tfs": [], "flow_delta": []}
-        all_genes = []
-        n = len(pa.index)
-
+    
         for recp in self.flow_dics.keys():
-            df = self.make_df_flow(recp)
-            if only_tf:
-                all_genes += list(df.loc[df["target"] == "s", "source"])
-            else:
-                all_genes += list(df["source"]) + list(df["target"])
-            row = [recp + "_Source", "t", math.inf]
-            pa.loc[n] = row
-            n += 1
+            pa.loc[pa.shape[0]] = ["source_node",recp,math.inf]
 
-        all_genes = np.unique(all_genes)
         gpf = nx.from_pandas_edgelist(pa, "source", "target", edge_attr="capacity", create_using=nx.DiGraph())
-        max_flow = nx.maximum_flow(gpf, "s", "t", flow_func=nx.algorithms.flow.dinitz)[0]
+        max_flow = nx.maximum_flow(gpf, "source", "target", flow_func=nx.algorithms.flow.dinitz)[0]
         self.max_multy_flow = max_flow
+        return pa 
 
+    def calculate_significant_tf_Multy_sinc(self):
+        pa = self.run_multiy_source_flow()
+        all_genes = np.unique(list(pa.loc[pa["target"] == "sink", "source"]))
+        delta_dict = {}
         with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
             results = list(executor.map(graphs_dict._calculate_flow_delta_for_df,
-                                        [(gene, pa.copy(), max_flow) for gene in all_genes]))
-
+                                        [(gene, pa.copy(), self.max_multy_flow) for gene in all_genes]))
         for element in results:
-            tf_effects["tfs"].append(element[0])
-            tf_effects["flow_delta"].append(element[1])
-
-        tf_effects = pd.DataFrame.from_dict(tf_effects)
+            delta_dict[element[0]] = element[1]
+           
+        tf_effects = pd.DataFrame(delta_dict)
         tf_effects = tf_effects.sort_values(by="flow_delta", axis=0, ascending=False)
         return tf_effects
 
-    def run_multiy_source_flow(self,graph):
-        n = len(graph.index)
+    def premutate_sub_graph(self,sub_graph,t=10):
+        for _ in range(t):
+            sub_graph["Target"] = np.random.permutation(sub_graph["Target"])
+        self_circ_rows = sub_graph.loc[sub_graph["Target"] == sub_graph["Source"]].index
+
+        for row in self_circ_rows:
+            target = sub_graph.loc[row]["Target"]
+            perm_row = sub_graph.loc[(sub_graph["Target"] != target) & (sub_graph["Source"] != target) ,:].sample()
+            sub_graph.loc[row,"Target"] = perm_row["Target"].to_list()[0]
+            sub_graph.loc[perm_row.index,"Target"] = target
+        return sub_graph
+        
+    def draw_graph(self,flow):
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
+        from scipy.stats import rankdata
+        graph = self.make_df_flow(flow=flow)
+        graph = graph.loc[graph.target != "sink",:]
+        G  = nx.from_pandas_edgelist(graph, "source", "target", edge_attr="flow", create_using=nx.DiGraph())
+        pos = nx.kamada_kawai_layout(G)
+        cmap = plt.cm.plasma
+        nx.draw_networkx_nodes(G,pos=pos,node_size = 5)
+        edges = G.edges()
+        colors = [G[u][v]['flow'] for u,v in edges]
+        col1 = rankdata(colors,method='ordinal')
+        nx.draw_networkx_edges(G,pos=pos,width=5,edge_color=col1,edge_cmap=cmap,style="--")
+        nx.draw_networkx_labels(G,pos=pos)
+
+    def edge_dgree_perm(self, rec,cap=None):
+        if cap is None:
+            cap = self.capcity_network
+        
+        cap_df = nx.to_pandas_edgelist(cap)
+        cap_df.columns = ["Source", "Target", "capacity"]
+        ##### 3 bins
+        cap_df.sort_values("capacity",inplace=True)
+        top1 = cap_df.iloc[int(cap_df.shape[0]/3)]["capacity"]
+        top2 = cap_df.iloc[int(2*cap_df.shape[0]/3)]["capacity"]
+        sub_cup1 = self.premutate_sub_graph(cap_df.loc[cap_df.capacity < top1,:])
+        sub_cup2 = self.premutate_sub_graph(cap_df.loc[(cap_df.capacity >= top1) & (cap_df.capacity <= top2) ,:])
+        sub_cup3 = self.premutate_sub_graph(cap_df.loc[cap_df.capacity > top2,:])
+        cap_df = pd.concat([sub_cup1,sub_cup2,sub_cup3])
+        ###on bine!
+        cap_df = self.premutate_sub_graph(cap_df)
+        graph =  nx.from_pandas_edgelist(cap_df, "Source", "Target", edge_attr="capacity", create_using=nx.DiGraph())
+        flow_value, flow =  nx.maximum_flow(graph, rec ,"sink", flow_func=nx.algorithms.flow.dinitz)
+        return flow_value
+
+    def calculate_p_value_for_recp(self, rec, num_of_perm=100):
+        print(rec)
+        orig_flow, _ = nx.maximum_flow(self.capcity_network, rec ,"sink", flow_func=nx.algorithms.flow.dinitz)
+        flows =  np.array([self.edge_dgree_perm(rec) for i in range(num_of_perm)])
+        p_value = (flows >= orig_flow).sum() / len(flows)  
+        print(p_value)
+        return p_value
+
+    def perm_test_for_all_recptors(self):
+        pvals = {}
         for recp in self.flow_dics.keys():
-            df = self.make_df_flow(recp)
-            row = ["source_node", recp,np.inf]
-            graph.loc[n] = row
-            n += 1
-
-        gpf = nx.from_pandas_edgelist(graph, "source", "target", edge_attr="capacity", create_using=nx.DiGraph())
-        max_flow, flow = nx.maximum_flow(gpf, "source_node", "sink", flow_func=nx.algorithms.flow.dinitz)
-
-        return  max_flow, flow
-
-    def add_t_to_network(self):
-        pa = nx.to_pandas_edgelist(self.capcity_network)
-        pa.columns = ["source", "target", "capacity"]
-        n = len(pa.index)
-        for recp in self.flow_dics.keys():
-            row = [recp + "_Source", "t", math.inf]
-            pa.loc[n] = row
-            n += 1
-        return pa
-
-
-    def calculate_max_flow_for_one_tf(self, tf):
-        pa = self.add_t_to_network()
-        cols = ["source", "target", "capacity"]
-        pa["istf"] = pa.apply(lambda row: True if row["source"] != "s" or row["target"].find(tf) >= 0 else False,
-                              axis=1)
-        pa = pa.loc[pa["istf"], cols]
-        gpf = nx.from_pandas_edgelist(pa, "source", "target", edge_attr="capacity", create_using=nx.DiGraph())
-        max_flow, flow = self.run_multiy_source_flow(pa)
-        result = self.make_df_flow(flow=flow)
-        result["notTorS"] = result.apply(lambda row: True if row["source"] != "source_node" and row["target"] != "sink" else False,
-                                         axis=1)
-        return result.loc[result["notTorS"], ["source", "target", "flow"]]
-
-    def calculate_p_value_for_recp(self, rec, num_of_perm=1000, fix_rec=True):
-        flow_list = []
-        stat = nx.maximum_flow(self.capcity_network, "s", rec + "_Source", flow_func=nx.algorithms.flow.dinitz)[0]
-        graph = nx.to_pandas_edgelist(self.capcity_network)
-
-
-def shortest_path(grpah, node1, node2, upload_name="temp_grpah"):
-    try:
-        return nx.single_source_dijkstra(grpah, node1, node2)
-    except:
-        grpah = load_obj(upload_name)
-        return nx.single_source_dijkstra(grpah, node1, node2)
+            pvals[recp] = (self.calculate_p_value_for_recp(recp))
+        return pvals
+    
+    def max_flow_withno_recptor(self,recp,exp):
+        cap = self.capcity_network
+        cap_df = nx.to_pandas_edgelist(cap)
+        cap_df.columns = ["Source", "Target", "capacity"]
+        cap_df = cap_df.loc[cap_df.Source != recp,:]
+        cap_df = pd.concat([cap_df,self.pa.loc[self.pa.Source == recp,:]])
+        dist_args =  utils.load_obj(r"./outputObj/dist_norm_args")
+        cap_df.loc[cap_df.Source == recp,"capacity"] = 1
+        graph =  nx.from_pandas_edgelist(cap_df, "Source", "Target", edge_attr="capacity", create_using=nx.DiGraph())
+        flow_value, _ =  nx.maximum_flow(graph, recp ,"sink", flow_func=nx.algorithms.flow.dinitz)
+        return flow_value
+        flows =  np.array([self.edge_dgree_perm(recp,graph) for i in range(10)])
+        p_value = (flows > flow_value).sum() / len(flows)  
+        print(f"for {recp} the p value is {p_value}")
+        return p_value
 
 
 def format_Gene_dict(gene, from_dict=False):
@@ -256,47 +289,6 @@ def format_Gene_dict(gene, from_dict=False):
     sl = str.lower(sl)
 
     return fl + sl
-
-
-def find_wights(edge):
-    return (1 / edge["inputAvgExp"]) * (1 / edge["OutputAvgExp"]) * (2 - edge["weight"])
-
-
-def save_obj(obj, name):
-    with open(name + '.pkl', 'wb') as f:
-        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-
-
-def load_obj(name):
-    with open(name + '.pkl', 'rb') as f:
-        return pickle.load(f)
-
-
-def hip_Test(targets, N, exp_cell):
-    k = len(exp_cell)
-    target_exp = exp_cell[exp_cell.index.isin(targets)]
-    m = sum(target_exp)
-    q = len(target_exp)
-    n = N - m
-    p_value = float(r(f"python_phyper({q - 1}, {m}, {n}, {k})"))
-    return (p_value)
-
-
-def hiper_test_tfs(exp, tfs):
-    tf_score = {}
-    clusterExprsstion = exp.apply(np.sum, axis=1)
-    clusterExprsstion = clusterExprsstion[clusterExprsstion > 0]
-    for tf in tfs.keys():
-        try:
-            score = hip_Test(tfs[tf], sum(clusterExprsstion), clusterExprsstion)
-        except:
-            score = hip_Test([tfs[tf]], sum(clusterExprsstion), clusterExprsstion)
-
-        if score < 0.05:
-            tf_score[tf] = score
-
-    return tf_score
-
 
 def Tf_Per_Recp(exp, recptors, tfs):
     recptors = np.unique(recptors)
@@ -311,8 +303,7 @@ def Tf_Per_Recp(exp, recptors, tfs):
 
     return recp_tf
 
-
-def build_flowing_network_with_normlized_wights(ProtAction, tfs_enrc, exp):
+def build_flowing_network_with_normlized_wights(ProtAction, tfs_enrc, exp, recps_for_roc = None):
     pa = ProtAction
     pa["Source"] = pa["Input-node Gene Symbol"]
     pa["Target"] = pa["Output-node Gene Symbol"]
@@ -322,12 +313,16 @@ def build_flowing_network_with_normlized_wights(ProtAction, tfs_enrc, exp):
 
     pa["Source"] = pa["Source"].apply(format_Gene_dict).astype(str)
     pa["Target"] = pa["Target"].apply(format_Gene_dict).astype(str)
-
+    
     clusterExprsstion = exp.copy()
     clusterExprsstion["not_zero"] = clusterExprsstion.apply(lambda x: x.astype(bool).sum(), axis=1)
-    clusterExprsstion = clusterExprsstion.loc[clusterExprsstion.not_zero > clusterExprsstion.shape[1] * CUTOFF, :]
+    if recps_for_roc is None:
+         clusterExprsstion = clusterExprsstion.loc[clusterExprsstion.not_zero > clusterExprsstion.shape[1] * CUTOFF, :]
+    else:
+        clusterExprsstion = clusterExprsstion.loc[(clusterExprsstion.not_zero > clusterExprsstion.shape[1] * CUTOFF) | (clusterExprsstion.index.isin(recps_for_roc)) , :]
+
     clusterExprsstion.drop("not_zero",axis=1,inplace = True)
-    clusterExprsstion = pd.DataFrame(exp.mean(axis=1))
+    clusterExprsstion = pd.DataFrame(clusterExprsstion.mean(axis=1))
 
 
     pa = pa.loc[pa["Source"].isin(list(clusterExprsstion.index)), :]
@@ -337,30 +332,31 @@ def build_flowing_network_with_normlized_wights(ProtAction, tfs_enrc, exp):
     gene_wights = pd.DataFrame(clusterExprsstion).copy()
     gene_wights["gene"] = clusterExprsstion.index
     gene_wights["exp"] = clusterExprsstion.values
-    loc, scale = sc.expon.fit(gene_wights.exp)
-    
-    gene_wights["wights"] = gene_wights["exp"].apply(lambda x: sc.expon.cdf(x, loc, scale))
-    gene_wights = gene_wights[["gene", "wights"]]
+
+    ##### for none-scale data
+    #loc, scale = sc.expon.fit(gene_wights.exp) 
+    #gene_wights["wights"] = gene_wights["exp"].apply(lambda x: sc.expon.cdf(x, loc, scale))
+    #gene_wights = gene_wights[["gene", "wights"]]
+
+    dist_args =  utils.load_obj(r"./outputObj/dist_norm_args")
+    gene_wights["wights"] = gene_wights.apply(lambda x: dist_args[x.gene](x.exp,exp.shape[1]), axis=1 )
 
     pa["capacity"] = pa.apply(lambda x: float(x["capacity"]) * float(gene_wights.loc[gene_wights.gene == x["Source"], "wights"]) * \
                                         float(gene_wights.loc[gene_wights.gene == x["Target"], "wights"]),axis=1)
-    n = pa.shape[0]
     for tf in tfs_enrc:
         if tf in  pa["Target"].to_list():
-            row = [tf, "sink", np.inf]
-            pa.loc[n] = row
-            n += 1
+            pa.loc[pa.shape[0]] = [tf, "sink", np.inf]
+ 
 
     gp = nx.from_pandas_edgelist(pa, "Source", "Target", edge_attr="capacity", create_using=nx.DiGraph())
-    save_obj(gp, "temp_grpah")
+    utils.save_obj(gp, "temp_grpah")
 
     return gp
 
-
-def DSA_anaylsis(exp, recptors, ProtAction, ProtInfo, tfs):
+def DSA_anaylsis(exp, recptors, ProtAction, ProtInfo, tfs,recps_for_roc = None):
     # tfs_scores = hiper_test_tfs(exp, tfs)
     tfs_scores = ce.CERNO_alg(exp.apply(np.sum, axis=1), tfs)
-    gpf = build_flowing_network_with_normlized_wights(ProtAction, tfs_scores, exp)
+    gpf = build_flowing_network_with_normlized_wights(ProtAction, tfs_scores, exp,recps_for_roc=recps_for_roc)
     flow_values = []
     flow_dicts = {}
     recptors = np.unique(recptors)
@@ -378,8 +374,4 @@ def DSA_anaylsis(exp, recptors, ProtAction, ProtInfo, tfs):
     df.index = list(map(lambda val: val[0], flow_values))
     df["Recp"] = df.index
     gd = graphs_dict(flow_dicts, gpf)
-
     return df, gd
-
-
-

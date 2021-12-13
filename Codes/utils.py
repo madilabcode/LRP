@@ -10,71 +10,14 @@ from rpy2 import robjects as ro
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects import default_converter
 import rpy2.robjects.pandas2ri as rpyp
-
+import scipy.stats as sc
+from matplotlib import pyplot as plt
+import seaborn as sns
+import pickle
+import dill
 
 def intersection(lst1, lst2):
     return [value for value in lst1 if value in lst2]
-
-
-def align_clusters(orig, active1, active2, name1, name2, format1=None, format2=None):
-    format1 = dict(format1)
-    format2 = dict(format2)
-    orig["cell"] = orig.index
-    active1["cell"] = active1.index
-    active2["cell"] = active2.index
-
-    if format1 is not None:
-        active1["cell"] = active1["cell"].apply(
-            lambda cell: format1[cell.split("_")[0]] + cell.split("_")[len(cell.split("_")) - 1])
-
-    if format2 is not None:
-        active2["cell"] = active2["cell"].apply(
-            lambda cell: format2[cell.split("_")[0]] + cell.split("_")[len(cell.split("_")) - 1])
-
-    orig.index = range(len(orig.index))
-    active1.index = range(len(active1.index))
-    active2.index = range(len(active2.index))
-
-    orig = orig.rename(columns={orig.columns[0]: 'orig_ident'})
-    active1 = active1.rename(columns={active1.columns[0]: 'active1_ident'})
-    active2 = active2.rename(columns={active2.columns[0]: 'active2_ident'})
-
-    active1 = pd.merge(orig, active1, how="inner", on="cell")
-    active2 = pd.merge(orig, active2, how="inner", on="cell")
-
-    active1_result = pd.pivot_table(active1, index=["active1_ident", "orig_ident"], values=["cell"], aggfunc=len)
-    active2_result = pd.pivot_table(active2, index=["active2_ident", "orig_ident"], values=["cell"], aggfunc=len)
-
-    active1_result["active1_ident"] = list(map(lambda ind: ind[0], active1_result.index))
-    active1_result["orig_ident"] = list(map(lambda ind: ind[1], active1_result.index))
-    active1_result = active1_result[["active1_ident", "orig_ident", "cell"]]
-    active1_result.index = range(len(active1_result.index))
-
-    active2_result["active2_ident"] = list(map(lambda ind: ind[0], active2_result.index))
-    active2_result["orig_ident"] = list(map(lambda ind: ind[1], active2_result.index))
-    active2_result = active2_result[["active2_ident", "orig_ident", "cell"]]
-    active2_result.index = range(len(active2_result.index))
-
-    active1_sum_of_cluster = pd.pivot_table(active1, index=["active1_ident"], values=["cell"], aggfunc=len)
-    active1_sum_of_cluster["active1_ident"] = active1_sum_of_cluster.index
-    active1_sum_of_cluster.index = range(len(active1_sum_of_cluster.index))
-    active2_sum_of_cluster = pd.pivot_table(active2, index=["active2_ident"], values=["cell"], aggfunc=len)
-    active2_sum_of_cluster["active2_ident"] = active2_sum_of_cluster.index
-    active2_sum_of_cluster.index = range(len(active2_sum_of_cluster.index))
-
-    active1_result = pd.merge(active1_result, active1_sum_of_cluster, on="active1_ident")
-    active1_result["P_of_cluster"] = active1_result["cell_x"] / active1_result["cell_y"]
-    active1_result = active1_result.loc[active1_result["P_of_cluster"] > 0.5, :].reindex(
-        columns=["active1_ident", "orig_ident", "P_of_cluster"])
-    active2_result = pd.merge(active2_result, active2_sum_of_cluster, on="active2_ident")
-    active2_result["P_of_cluster"] = active2_result["cell_x"] / active2_result["cell_y"]
-    active2_result = active2_result.loc[active2_result["P_of_cluster"] > 0.5, :].reindex(
-        columns=["active2_ident", "orig_ident", "P_of_cluster"])
-
-    result = pd.merge(active1_result, active2_result, on="orig_ident").reindex(
-        columns=["active1_ident", "active2_ident"])
-    result = result.rename(columns={"active1_ident": name1, "active2_ident": name2})
-    return result
 
 
 def reduce_table_by_key(table, key, Col_Name):
@@ -165,26 +108,63 @@ def DSA_Classfier(args1, args2, modle=None, return_modle=False, plot_name="resul
 
     return dsa_table, ls[0], ls[1]
 
+def save_obj(obj, name):
+    with open(name + '.pkl', 'wb') as f:
+        dill.dump(obj, f, dill.HIGHEST_PROTOCOL)
 
-def shift_dist_of_object(obj_tr, obj_co, assay="scale.data"):
+
+def load_obj(name):
+    with open(name + '.pkl', 'rb') as f:
+        return dill.load(f)
+
+def sample_idents(exp,idents,sample_size):
+    idents_count = idents.value_counts()
+    idents_count = idents_count.apply(lambda x: max(sample_size,x))
+    cts = lambda cell: idents_count[idents[cell]]
+    sample_idents = pd.Series(idents.index).apply(lambda x: np.random.choice([1,0], size=1, p=[sample_size/cts(x), 1 -(sample_size/cts(x))])[0])
+    sample_idents.index = idents.index
+    return sample_idents[sample_idents == 1].index
+
+
+def return_norm_express_per_gene(gene_col,value):
+    loc, scale = sc.norm.fit(gene_col)
+    return sc.norm.cdf(value,loc,scale)
+
+
+def zero_inflated_cdf(x,row):
+    if x == 0:
+        return 0 
+    n = len(row)
+    non_zero_n  =len(row[row!=0])
+    zero_n = len(row[row==0])
+    return zero_n/n + non_zero_n/n*(sc.norm.cdf(x,*sc.norm.fit(row)))
+
+def normalize_scale_exp(tr_path, co_path,sample_size = 200):
     with localconverter(default_converter + rpyp.converter):
         r("library(Seurat)")
-        r("library(dplyr)")
-        GetAssayData = r(f"function(obj) obj[['RNA']]@{assay} %>% as.data.frame()")
-        shift_exp = r("""function(obj,exp){ obj[['RNA']]@scale.data =  as.matrix(exp)
-         return(obj)}""")
-        exp_tr, exp_co = GetAssayData(obj_tr), GetAssayData(obj_co)
-        min_value_tr = exp_tr.apply(min, axis=1).min()
-        min_value_co = exp_co.apply(min, axis=1).min()
-        min_value = min(min_value_tr, min_value_co)
-        exp_tr += np.abs(min_value)
-        exp_co += np.abs(min_value)
-        return shift_exp(obj_tr, exp_tr), shift_exp(obj_co, exp_co)
+        readRDS = r("readRDS")
+        GetAssayData = r(f"function(obj) as.data.frame(obj[['RNA']]@data)")
+        GetObjIdent = r("function(obj) as.character(obj@active.ident)")
+        obj_tert = readRDS(f"InputObj/{tr_path}")
+        obj_con = readRDS(f"InputObj/{co_path}")
+        tr_exp = GetAssayData(obj_tert) 
+        co_exp = GetAssayData(obj_con) 
+        tr_idents = pd.Series(GetObjIdent(obj_tert))
+        tr_idents.index = tr_exp.columns
+        co_idnets = pd.Series(GetObjIdent(obj_con))
+        co_idnets.index = co_exp.columns
 
-
+    tr_sample = sample_idents(tr_exp,tr_idents,sample_size)
+    co_sample = sample_idents(co_exp, co_idnets,sample_size)
+    frames = [tr_exp[tr_sample],co_exp[co_sample]]
+    unite_exp = pd.concat(frames, axis=1)
+    #dist_args = unite_exp.apply(lambda row : lambda x: zero_inflated_cdf(x,row),axis=1)
+    dist_args = unite_exp.apply(lambda row : lambda x,n: sc.norm.cdf(x,loc=row.mean(),scale=row.std()**2/n),axis=1)
+    save_obj(dist_args,r"./outputObj/dist_norm_args")
+    return dist_args
+    
 def save_to_csv(table, name):
     table.to_csv(name)
-
 
 def json_zip(js, ZIPJSON_KEY='base64(zip(o))'):
     js = {
