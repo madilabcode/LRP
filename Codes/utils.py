@@ -130,6 +130,9 @@ def return_norm_express_per_gene(gene_col,value):
     loc, scale = sc.norm.fit(gene_col)
     return sc.norm.cdf(value,loc,scale)
 
+def avg_dist(row,x,n):
+    return sc.norm.cdf(x,row[0],row[1]/n)
+
 
 def zero_inflated_cdf(x,row):
     if x == 0:
@@ -159,10 +162,10 @@ def normalize_scale_exp(tr_path, co_path,sample_size = 200):
     frames = [tr_exp[tr_sample],co_exp[co_sample]]
     unite_exp = pd.concat(frames, axis=1)
     #dist_args = unite_exp.apply(lambda row : lambda x: zero_inflated_cdf(x,row),axis=1)
-    dist_args = unite_exp.apply(lambda row : lambda x,n: sc.norm.cdf(x,loc=row.mean(),scale=row.std()**2/n),axis=1)
+    dist_args = dict(unite_exp.apply(lambda row : (row.mean(),row.std()),axis=1))
     save_obj(dist_args,r"./outputObj/dist_norm_args")
     return dist_args
-    
+
 def save_to_csv(table, name):
     table.to_csv(name)
 

@@ -60,16 +60,12 @@ python_phyper = function(q,m,n,k){
   return = phyper(q,m,n,k,lower.tail = FALSE)
 }
 
-#source_python("Tf_Graph.py") 
 createLRtable = function(seuratObj,toExpression,fromExpression,fromName = fromName,toName=toName,assyaName,thrshold = 0.1,num2compare = "de"){
   #print(toExpression)
   LigandReceptorTable = read.delim("files/LigandReceptorTableMouse.tsv",sep = "\t", header = T, quote = "" )  
   #remove overlaps between ligand and receptor
   LigandReceptorTable = LigandReceptorTable[!LigandReceptorTable$from %in% LigandReceptorTable$to,]
   LigandReceptorTable = LigandReceptorTable[!LigandReceptorTable$to %in% LigandReceptorTable$from,]
-  
-  remove(Expression)
-  
   
   if (assyaName == "counts"){
     normel = function(x){
@@ -269,22 +265,11 @@ createCircosPlots = function(toExpression,LR,DE, TFR,DSA,fromName  ,toName , num
                            ((max(GeneExpression$mean)+min(GeneExpression$mean))/2) %>% round(digits = 2),
                            max(GeneExpression$mean)%>% round(digits = 2)),
                     col_fun = EXPRcol_fun, title_position = "leftcenter-rot", title = " log(Relative Expression)",legend_height = unit(4, "cm"))
-  
-  
-  # EXPRcol_fun = colorRamp2(c(min(GeneExpression$mean), mean(GeneExpression$mean), mean(GeneExpression$mean)) + sd(GeneExpression$mean)
-  #            , c("blue", "white", "red"))
-  #lgd_EXPR = Legend(at = c(min(GeneExpression$mean) %>% round(digits = 20),
-  #                        (mean(GeneExpression$mean)) %>% round(digits = 20),
-  #                      (mean(GeneExpression$mean)) + sd(GeneExpression$mean)%>% round(digits = 2)),
-  #               col_fun = EXPRcol_fun, title_position = "leftcenter-rot", title = "Expression",legend_height = unit(2, "cm"))
-  
-  
-  
+    
   #combine legends
   lgd_list_vertical = packLegend(lgd_EXPR,lgd_DE ,lgd_DSA, gap = unit(0.7, "cm"))
   
   #receprors rectangles are grey
-  
   if (!is.null(de_recptors)){
     grid.colPRE = cbind(as.character(LR$Receptor), ifelse(LR$Receptor %in% de_recptors, "#33CCCC","grey")) %>% as.data.frame()
   }else{

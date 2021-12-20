@@ -69,15 +69,21 @@ def roc_test():
 
         pa = pd.read_csv("./files/humanProtinAction.csv")
         pi = pd.read_csv("./files/humanProtinInfo.csv")
-        TfDict = pyd.main_py_to_R(pi, pa)[0]
+        TfDict,pi, pa = pyd.main_py_to_R(pi, pa)
         exp = GetAssayData(obj_tert)
-        df,graph_obj = tfg.DSA_anaylsis(exp, lr.to, pa, pi, TfDict,recps_for_roc = lr.to)
+        recp = lr.to
+        recp = pd.DataFrame(recp.loc[recp.isin(pa["Input-node Gene Symbol"])].drop_duplicates())
+        recp["label"] = recp.to.apply(lambda x: 1 if x in markers.index else 0)
+        recp_pos = recp.loc[recp.label == 1]
+        recp_neg = recp.loc[recp.label == 0]
+        recp_neg = recp_neg.sample(frac=(recp_pos.shape[0] / recp_neg.shape[0]))
+        recp = pd.concat([recp_pos,recp_neg],axis=0).sample(frac=1)
+
+        df,graph_obj = tfg.DSA_anaylsis(exp, recp.to, pa, pi, TfDict,recps_for_roc = lr.to)
+        fpr, tpr, thresholds = metrics.roc_curve(df.label, df.flow, pos_label=1)
         df["label"] = df.Recp.apply(lambda x: 1 if x in markers.index else 0)
-        df_pos = df.loc[df.label == 1]
-        df_neg = df.loc[df.label == 0]
-        df_neg = df_neg.sample(frac=(df_pos.shape[0] / df_neg.shape[0]))
-        df = pd.concat([df_pos,df_neg],axis=0).sample(frac=1)
-        df["pvalue"] =df.Recp.apply(lambda x: graph_obj.calculate_p_value_for_recp(x,10))
+        print(metrics.auc(fpr, tpr))
+        df["pvalue"] =df.Recp.apply(lambda x: graph_obj.perm_p_values[x])
         fpr, tpr, thresholds = metrics.roc_curve(df.label, df.pvalue, pos_label=0)
 
         return metrics.auc(fpr, tpr)

@@ -11,10 +11,15 @@ import networkx as nx
 import pickle
 from Codes import CERNO as ce
 from Codes import utils as utils
+from sklearn.metrics import mutual_info_score as mis
 from Codes import pyDictToR as pyd
 import concurrent.futures
+import warnings
 
-CUTOFF = 0.3
+warnings.filterwarnings('ignore') 
+
+
+CUTOFF = 0.0
 PA = pd.read_csv("./files/humanProtinAction.csv")
 class Obj_dict:
     def __init__(self):
@@ -36,15 +41,7 @@ class graphs_dict:
         self.capcity_network = capcity_network
         self.max_flow_dict = self.calculate_max_flow_for_all_recp()
         self.max_multy_flow = None
-      #  self.perm_p_values =  self.perm_test_for_all_recptors()
-        self.pa = PA
-        self.pa["Source"] = self.pa["Input-node Gene Symbol"]
-        self.pa["Target"] = self.pa["Output-node Gene Symbol"]
-        self.pa["capacity"] = self.pa["Edge direction score"]
-        keeps = ["Source", "Target", "capacity"]
-        self.pa["Source"] =self.pa["Source"].apply(pyd.format_Gene_dict)
-        self.pa["Target"] =self.pa["Target"].apply(pyd.format_Gene_dict)
-        self.pa = self.pa[keeps]
+        self.perm_p_values =  self.perm_test_for_all_recptors()
 
     def sub_capcity_gaph_to_dict(self):
         sub = nx.to_pandas_edgelist(self.capcity_network)
@@ -249,7 +246,7 @@ class graphs_dict:
         flow_value, flow =  nx.maximum_flow(graph, rec ,"sink", flow_func=nx.algorithms.flow.dinitz)
         return flow_value
 
-    def calculate_p_value_for_recp(self, rec, num_of_perm=100):
+    def calculate_p_value_for_recp(self, rec, num_of_perm=10):
         print(rec)
         orig_flow, _ = nx.maximum_flow(self.capcity_network, rec ,"sink", flow_func=nx.algorithms.flow.dinitz)
         flows =  np.array([self.edge_dgree_perm(rec) for i in range(num_of_perm)])
@@ -303,6 +300,25 @@ def Tf_Per_Recp(exp, recptors, tfs):
 
     return recp_tf
 
+def mi(exp,pa, recps_for_roc=None):
+    clusterex = exp.copy()
+    clusterex["not_zero"] = clusterex.apply(lambda x: x.astype(bool).sum(), axis=1)
+    if recps_for_roc is None:
+         clusterex = clusterex.loc[clusterex.not_zero > clusterex.shape[1] * CUTOFF, :]
+    else:
+        clusterex = clusterex.loc[(clusterex.not_zero > clusterex.shape[1] * CUTOFF) | (clusterex.index.isin(recps_for_roc)) , :]
+
+    clusterex.drop("not_zero",axis=1,inplace = True)
+
+    pa = pa.loc[(pa.Source.isin(exp.index)) &  (pa.Target.isin(exp.index) )]
+    pa["wights"] = pa.apply(lambda x : mis(exp.loc[x.Source],exp.loc[x.Target]),axis=1)
+    pa["wights"] = pa.apply(lambda x: x.wights if x.Source in clusterex.index and x.Target in clusterex.index else 0 ,axis=1)
+    pa["wights"] /= pa["wights"].max()
+    pa["capacity"]*= pa["wights"]
+    pa.drop("wights",axis=1,inplace = True)
+
+    return pa
+
 def build_flowing_network_with_normlized_wights(ProtAction, tfs_enrc, exp, recps_for_roc = None):
     pa = ProtAction
     pa["Source"] = pa["Input-node Gene Symbol"]
@@ -314,35 +330,9 @@ def build_flowing_network_with_normlized_wights(ProtAction, tfs_enrc, exp, recps
     pa["Source"] = pa["Source"].apply(format_Gene_dict).astype(str)
     pa["Target"] = pa["Target"].apply(format_Gene_dict).astype(str)
     
-    clusterExprsstion = exp.copy()
-    clusterExprsstion["not_zero"] = clusterExprsstion.apply(lambda x: x.astype(bool).sum(), axis=1)
-    if recps_for_roc is None:
-         clusterExprsstion = clusterExprsstion.loc[clusterExprsstion.not_zero > clusterExprsstion.shape[1] * CUTOFF, :]
-    else:
-        clusterExprsstion = clusterExprsstion.loc[(clusterExprsstion.not_zero > clusterExprsstion.shape[1] * CUTOFF) | (clusterExprsstion.index.isin(recps_for_roc)) , :]
-
-    clusterExprsstion.drop("not_zero",axis=1,inplace = True)
-    clusterExprsstion = pd.DataFrame(clusterExprsstion.mean(axis=1))
-
-
-    pa = pa.loc[pa["Source"].isin(list(clusterExprsstion.index)), :]
-    pa = pa.loc[pa["Target"].isin(list(clusterExprsstion.index)), :]
+    pa = mi(exp,pa)
     pa.reset_index(drop=True,inplace=True)
 
-    gene_wights = pd.DataFrame(clusterExprsstion).copy()
-    gene_wights["gene"] = clusterExprsstion.index
-    gene_wights["exp"] = clusterExprsstion.values
-
-    ##### for none-scale data
-    #loc, scale = sc.expon.fit(gene_wights.exp) 
-    #gene_wights["wights"] = gene_wights["exp"].apply(lambda x: sc.expon.cdf(x, loc, scale))
-    #gene_wights = gene_wights[["gene", "wights"]]
-
-    dist_args =  utils.load_obj(r"./outputObj/dist_norm_args")
-    gene_wights["wights"] = gene_wights.apply(lambda x: dist_args[x.gene](x.exp,exp.shape[1]), axis=1 )
-
-    pa["capacity"] = pa.apply(lambda x: float(x["capacity"]) * float(gene_wights.loc[gene_wights.gene == x["Source"], "wights"]) * \
-                                        float(gene_wights.loc[gene_wights.gene == x["Target"], "wights"]),axis=1)
     for tf in tfs_enrc:
         if tf in  pa["Target"].to_list():
             pa.loc[pa.shape[0]] = [tf, "sink", np.inf]
@@ -355,7 +345,7 @@ def build_flowing_network_with_normlized_wights(ProtAction, tfs_enrc, exp, recps
 
 def DSA_anaylsis(exp, recptors, ProtAction, ProtInfo, tfs,recps_for_roc = None):
     # tfs_scores = hiper_test_tfs(exp, tfs)
-    tfs_scores = ce.CERNO_alg(exp.apply(np.sum, axis=1), tfs)
+    tfs_scores = ce.CERNO_alg(exp.apply(np.mean, axis=1), tfs)
     gpf = build_flowing_network_with_normlized_wights(ProtAction, tfs_scores, exp,recps_for_roc=recps_for_roc)
     flow_values = []
     flow_dicts = {}

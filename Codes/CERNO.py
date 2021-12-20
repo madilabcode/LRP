@@ -39,7 +39,7 @@ def make_rank_dict(exp_named,names):
     exp_dict[value].append(name)
   
   rank_dict = {}
-  counter = 0
+  counter = 1
   for key, value in exp_dict.items():
     rank_dict[counter] = value
     counter += len(value)

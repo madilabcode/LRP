@@ -14,8 +14,10 @@ from Codes import utils
 import rpy2.robjects.pandas2ri as rpyp
 import concurrent.futures
 import pickle
+import warnings
 
 pd.options.mode.chained_assignment = None  # default='warn'
+warnings.filterwarnings('ignore') 
 
 assay = "data"
 
@@ -316,7 +318,7 @@ def main():
 
     pathTret = list(conf.loc[conf["Var"] == "objTr", "Value"])[0]
     pathControl = list(conf.loc[conf["Var"] == "objCo", "Value"])[0]
-    utils.normalize_scale_exp(pathTret,pathControl)
+    #utils.normalize_scale_exp(pathTret,pathControl)
     if type(pathControl) == float and np.isnan(pathControl):
         flag = False
     else:
@@ -529,8 +531,6 @@ def test_normaliztion():
 
 
 
-
-
 def test_permutations():
     conf = pd.read_csv("config.csv")
     name_obj_Tr = list(conf.loc[conf["Var"] == "nameObjTr", "Value"])[0]
@@ -542,5 +542,5 @@ def test_permutations():
 if __name__ == "__main__":
     print(os.getcwd())
     #test_permutations()
-    #main()
-    test_normaliztion()
+    main()
+    #test_normaliztion()
