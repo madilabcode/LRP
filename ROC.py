@@ -16,7 +16,9 @@ import concurrent.futures
 from sklearn import metrics
 import pickle
 import stringdb
-
+import matplotlib.pyplot as plt 
+from sklearn.metrics import roc_curve, auc
+from itertools import cycle
 assay = "data"
 
 
@@ -45,8 +47,31 @@ def string_network_compere(exp):
     ppi = ppi.loc[(ppi.preferredName_A.isin(genes)) & (ppi.preferredName_B.isin(genes))& (ppi.tscore > 0.7)]
     return ppi
     
+def draw_roc_plot(fpr,tpr):
+        
+    plt.figure()
+    lw = 2
+    colors = cycle(["aqua", "darkorange", "cornflowerblue","navy"])
+    for i, color in zip(range(4), colors):
+        plt.plot(
+            fpr[i],
+            tpr[i],
+            color=color,
+            lw=lw,
+            label="ROC curve of class {0} (area = {1:0.2f})".format(i, auc(fpr[i],tpr[i])),
+        )
 
-def roc_test():
+    plt.plot([0, 1], [0, 1], color="navy", lw=lw, linestyle="--")
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Carve")
+    plt.legend(loc="lower right")
+    plt.show()
+
+
+def roc_test(ident,fpr_flow, tpr_flow, fpr_p, tpr_p):
     conf = pd.read_csv("config.csv")
     pathTret = list(conf.loc[conf["Var"] == "objTr", "Value"])[0]
     pathControl = list(conf.loc[conf["Var"] == "objCo", "Value"])[0]
@@ -62,10 +87,10 @@ def roc_test():
         GetObjIdent = r("function(obj) as.character(obj@active.ident)")
         obj_tert = readRDS(f"InputObj/{pathTret}")
         obj_tert = subset(obj_tert,idents=["0","1","2","3","5","7","10","11"])
-        markers = FindMarkers(obj_tert,1)
+        markers = FindMarkers(obj_tert,ident)
         markers = markers.loc[markers.index.isin(lr.to)]
         no_markers = lr.loc[~lr.to.isin(markers.index),"to"].sample(frac=1).drop_duplicates()
-        obj_tert = subset(obj_tert,idents="1")
+        obj_tert = subset(obj_tert,idents=ident)
 
         pa = pd.read_csv("./files/humanProtinAction.csv")
         pi = pd.read_csv("./files/humanProtinInfo.csv")
@@ -78,20 +103,35 @@ def roc_test():
         recp_neg = recp.loc[recp.label == 0]
         recp_neg = recp_neg.sample(frac=(recp_pos.shape[0] / recp_neg.shape[0]))
         recp = pd.concat([recp_pos,recp_neg],axis=0).sample(frac=1)
-
-        df,graph_obj = tfg.DSA_anaylsis(exp, recp.to, pa, pi, TfDict,recps_for_roc = lr.to)
-        fpr, tpr, thresholds = metrics.roc_curve(df.label, df.flow, pos_label=1)
+        
+        df,graph_obj = tfg.DSA_anaylsis(exp, recp.to, pa, pi, TfDict)
         df["label"] = df.Recp.apply(lambda x: 1 if x in markers.index else 0)
+        print(df)
+        fpr, tpr, _ = roc_curve(df.label, df.DSA, pos_label=1) 
+        fpr_flow.append(fpr)
+        tpr_flow.append(tpr)
+
+        #draw_roc_plot(fpr,tpr)
+
         print(metrics.auc(fpr, tpr))
         df["pvalue"] =df.Recp.apply(lambda x: graph_obj.perm_p_values[x])
-        fpr, tpr, thresholds = metrics.roc_curve(df.label, df.pvalue, pos_label=0)
+        fpr, tpr, _ = metrics.roc_curve(df.label, df.pvalue, pos_label=0)
+        fpr_p.append(fpr)
+        tpr_p.append(tpr)
+        #draw_roc_plot(fpr,tpr)
 
-        return metrics.auc(fpr, tpr)
+        return fpr_flow, tpr_flow, fpr_p, tpr_p
            
 
 if __name__ == "__main__":
-    aucs = []
-    for i in range(1):
-         aucs.append(roc_test())
-    print(np.mean(aucs))
-    print(aucs)
+    fpr_flow = []
+    tpr_flow = []
+    fpr_p = []
+    tpr_p = []
+
+    for i in ["1","2","3","5"]:
+         fpr_flow, tpr_flow, fpr_p, tpr_p = roc_test(i,fpr_flow, tpr_flow, fpr_p, tpr_p)
+    
+    #draw_roc_plot(fpr_flow,tpr_flow)
+    #draw_roc_plot(fpr_p,tpr_p)
+
