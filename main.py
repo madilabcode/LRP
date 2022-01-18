@@ -32,6 +32,8 @@ def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False)
         DSA_PLOT_TSNE = r("DSA_PLOT_TSNE")
         readRDS = r("readRDS")
         subset = r("subset")
+        FindMarkers = r("function(obj,id) FindMarkers(object = obj,ident.1=id,only.pos = TRUE,slot='data',verbose = FALSE)")
+
 
         ProtNamesInfo = pd.read_csv("files/humanProtinInfo.csv")
         ProtActions = pd.read_csv("files/humanProtinAction.csv")
@@ -51,8 +53,8 @@ def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False)
         if len(DE) == 0:
             return None
 
-        DSA_lst = tfg.DSA_anaylsis(toExpression, legRet["Receptor"], ProtActions, ProtNamesInfo, tfs=TfDict)
-
+        DSA_lst = tfg.DSA_anaylsis(toExpression, legRet["Receptor"], ProtActions, ProtNamesInfo, tfs=TfDict,markers=FindMarkers(obj,toName))
+            
         if len(DSA_lst) == 0:
             return None
 
@@ -79,7 +81,7 @@ def LRP(path, toName, fromName, plot_path=None, thrshold=0.1, per_claster=False)
 
     r("rm(list = ls())")
     r("gc()")
-    return legRet, DSA_Table, DSA_lst[1]
+    return legRet.loc[legRet.Receptor.isin(sang_recp)], DSA_Table, DSA_lst[1]
 
 
 def dsa_score_per_cell(obj, toExpression, DSA_Table, sacle_factor=1):

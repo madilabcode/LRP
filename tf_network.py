@@ -7,6 +7,7 @@ from rpy2.robjects import r
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects import default_converter
 from Codes import Tf_Graph as tfg
+from Codes import utils
 import rpy2.robjects.pandas2ri as rpyp
 import concurrent.futures
 
@@ -53,17 +54,16 @@ def tf_flow_graph(tr=True):
     fromCluster = input("From Cluster")
     tfs = input("enter all tfs")
     tfsList = tfs.split()
-    graphObj = graphs.return_GD_from_key(toCluster).return_GD_from_key(fromCluster)
+    graphObj = graphs.return_GD_from_key(toCluster).return_GD_from_key(fromCluster).update_obj()
 
     for tf in tfsList:
         try:
-            df = graphObj.calculate_max_flow_for_one_tf(tf)
+            df = graphObj.flow_dict_to_single_tf(tf)
             df["flow"] = df["flow"].apply(lambda x: round(x, 3))
             df["flow"] = df["flow"].astype(float)
-            df.to_csv(f"./files/{fromCluster}_{toCluster}_{tf}_{tr}_flow_network.csv")
-
-            with localconverter(default_converter + rpyp.converter):
-                df["flow"] = df["flow"].astype(str)
+            df = df.loc[df.flow > 0.1]
+            df["flow"] = df["flow"].astype(str)
+            df.to_csv(f"./files/{toCluster}_{fromCluster}_{tf}_flow.csv")
               #  draw_flow_graph_from_df(df, root=tf)
                     #input("Press Enter to continue...")
 
@@ -82,6 +82,6 @@ if __name__ == "__main__":
             tfs_importance(False)
     else:
         if tr == "y":
-            tf_flow_graph()
+          tf_flow_graph()
         else:
             tf_flow_graph(False)
