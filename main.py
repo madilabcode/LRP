@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
 import os
-#os.environ["R_HOME"] = r"C:\Program Files\R\R-4.1.1"
-#os.environ['path'] += r";C:\Program Files\R\R-4.1.1\bin"
 from rpy2.robjects import r
 from rpy2 import robjects as ro
 from rpy2.robjects.conversion import localconverter
