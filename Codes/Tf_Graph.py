@@ -308,7 +308,7 @@ class graphs_dict:
         flow_value, flow =  nx.maximum_flow(graph, source_node ,"sink", flow_func=nx.algorithms.flow.dinitz)
         return flow_value
 
-    def calculate_p_value_for_recp(self, rec, num_of_perm=10):
+    def calculate_p_value_for_recp(self, rec, num_of_perm=100):
         print(rec)
         orig_flow, _ = nx.maximum_flow(self.capcity_network, rec ,"sink", flow_func=nx.algorithms.flow.dinitz)
         flows =  np.array([self.edge_dgree_perm(rec) for i in range(num_of_perm)])
@@ -316,7 +316,7 @@ class graphs_dict:
         print(p_value)
         return p_value
     
-    def calculate_p_value_for_tfs(self,num_of_perm=10):
+    def calculate_p_value_for_tfs(self,num_of_perm=100):
         pa, flows = self.flow_to_tfs() 
         pa.columns = ["Source","Target","capacity"]
     
