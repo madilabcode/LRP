@@ -17,7 +17,7 @@ the Graphs obj will be crated in the outputObj folder
 
 Now you can run the FLOW analysis with:
 
-pyton3 main.py
+python3 main.py
 
 In order to run the TF analysis first add the cluster annotation to the Annot.csv file.
 
