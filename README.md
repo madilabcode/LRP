@@ -1,4 +1,4 @@
-# Ligand-Receptor-Pipeline 
+# Ligand-Receptor-Pipeline
 First put your Seurat obj in the InputObj folder
 
 Update the config csv with :
@@ -22,6 +22,10 @@ pyton3 main.py
 In order to run the TF analysis first add the cluster annotation to the Annot.csv file.
 
 Now run -> python3 tf_network.py
+
+first enter [i] to get a csv file (will be saved in the files folder) with the importance score of each TF 
+
+now run tf_network.py again and enter [f] in order to crate the csv edge list of the flow to a given TF
 
 
 
