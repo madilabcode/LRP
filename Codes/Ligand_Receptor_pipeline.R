@@ -56,10 +56,6 @@ colors_set = function(){
   return(list(th,jet.colors))
 }
 
-python_phyper = function(q,m,n,k){
-  return = phyper(q,m,n,k,lower.tail = FALSE)
-}
-
 createLRtable = function(seuratObj,toExpression,fromExpression,fromName = fromName,toName=toName,assyaName,thrshold = 0.1,num2compare = "de"){
   #print(toExpression)
   LigandReceptorTable = read.delim("files/LigandReceptorTableMouse.tsv",sep = "\t", header = T, quote = "" )  

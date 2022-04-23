@@ -1,15 +1,6 @@
 Var,Value
-objTr,PD1Saline.merged.PD1.RDS
-objCo,PD1Saline.merged.Saline.RDS
-toVec,1
-fromVec,7
-plotpathTr,/plotOut/PD1
-nameObjTr,PD1_tomer
-plotpathCo,/plotOut/Saline
-nameObjCo,PD1_Saline_tomer
-toVecForDE,1
-fromVecForDE,7
-nameObjCLF,PD1
-DEplotpathT,/plotOut/PD1/DE-DSA
-DEplotpathC,/plotOut/Saline/DE-DSA
-Proj,PD1
+obj_name,pbmc_SELP.RData
+toVec,1 2
+fromVec,4
+Plotpath,/plotOut/SELP
+Project_name,SELP

@@ -30,7 +30,7 @@ def reduce_table_by_key(table, key, Col_Name):
 def sum_avg_ligand(ligs, exp):
     sub_exp = exp.loc[exp.index.isin(ligs), :]
     sub_exp_Avg = sub_exp.apply(np.mean, axis=1)
-    return np.log1p(np.sum(sub_exp_Avg))
+    return np.sum(sub_exp_Avg)
 
 
 def dsa_table_update_to_lig(toExp, fromExp, DSA_Table, legRet):

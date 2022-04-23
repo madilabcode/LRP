@@ -34,8 +34,6 @@ def tfs_importance(tr=True):
 
 def tf_flow_graph(tr=True):
     r["source"]('Codes/Ligand_Receptor_pipeline.R')
-    draw_flow_graph_from_df = r("draw_flow_graph_from_df")
-
     try:
         conf = pd.read_csv("config.csv")
 

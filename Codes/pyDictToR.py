@@ -1,3 +1,8 @@
+from rpy2.robjects import r
+from rpy2 import robjects as ro
+from rpy2.robjects.conversion import localconverter
+from rpy2.robjects import default_converter
+import rpy2.robjects.pandas2ri as rpyp
 import re
 import numpy as np
 import pandas as pd
@@ -13,6 +18,15 @@ def format_Gene_dict(gene, from_dict = False):
   sl = str.lower(sl)
 
   return fl + sl
+
+def build_tf_dorothea():
+    r("library(dorothea)")
+    with localconverter(default_converter + rpyp.converter):
+        tfs = r("t1 = dorothea::dorothea_mm")
+        tfs = tfs.loc[(tfs.confidence != "E") & (tfs.confidence != "D")]
+        tfs_dict = {tf : tfs.loc[tfs.tf == tf,"target"].to_list() for tf in tfs.tf.drop_duplicates()}
+    
+    return tfs_dict
 
 
 def make_dict(data):
@@ -59,12 +73,15 @@ def make_dist_dickt(data, tf_dict):
   return dist_dickt
 
 
-def main_py_to_R(pro_name, pro_action):
-  data = np.load('files/TFdictBT1.npy', allow_pickle=True)
-  data = str(data)
-  tf_dict = make_dict(data)
-  pro_action = pro_action.loc [:,["Input-node Gene Symbol","Output-node Gene Symbol","Edge direction score"]]
-  format_graph_files(pro_name,["Gene Symbol"],pro_action,["Input-node Gene Symbol","Output-node Gene Symbol"])
-  #dist_dickt = make_dist_dickt(r.Expression_scale,tf_dict )
-  return tf_dict, pro_name, pro_action
+def main_py_to_R(pro_name, pro_action,dorothea=False):
+    if dorothea:
+          tf_dict = build_tf_dorothea()
+    else:
+        data = np.load('files/TFdictBT1.npy', allow_pickle=True)
+        data = str(data)
+        tf_dict = make_dict(data)
+    pro_action = pro_action.loc [:,["Input-node Gene Symbol","Output-node Gene Symbol","Edge direction score"]]
+    format_graph_files(pro_name,["Gene Symbol"],pro_action,["Input-node Gene Symbol","Output-node Gene Symbol"])
+    #dist_dickt = make_dist_dickt(r.Expression_scale,tf_dict )
+    return tf_dict, pro_name, pro_action
 
