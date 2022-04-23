@@ -1,6 +1,6 @@
 Var,Value
-obj_name,pbmc_SELP.RData
+obj_name,test.RData
 toVec,1 2
-fromVec,4
-Plotpath,/plotOut/SELP
-Project_name,SELP
+fromVec,1 2
+Plotpath,/plotOut/test
+Project_name,Test_proj
